@@ -1,52 +1,67 @@
 import discord
 from discord.ext import commands
+import requests
 import random
 import string
-import requests
-
-BANK = "MB"
-ACCOUNT = "0764495919"
-ACCOUNT_NAME = "NGUYENTHANHDAT"
+import time
 
 API_KEY = "0c8672410bf6ba8caeb009508b026ed9"
 
-ORDERS_CATEGORY_NAME = "orders"
-
 orders = {}
 
+cooldowns = {}
 
 def generate_code():
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
 
+def anti_spam(user_id):
 
-# ===================================
-# MODAL NẠP CARD
-# ===================================
+    now = time.time()
 
-class CardModal(discord.ui.Modal, title="🎴 NẠP THẺ CÀO"):
+    if user_id in cooldowns:
+        if now - cooldowns[user_id] < 10:
+            return False
 
-    telco = discord.ui.TextInput(
-        label="Loại thẻ",
-        placeholder="VIETTEL / MOBIFONE / VINAPHONE"
-    )
+    cooldowns[user_id] = now
+    return True
 
-    amount = discord.ui.TextInput(
-        label="Mệnh giá",
-        placeholder="100000"
-    )
 
-    serial = discord.ui.TextInput(
-        label="Số seri"
-    )
+class CardModal(discord.ui.Modal):
 
-    code = discord.ui.TextInput(
-        label="Mã thẻ"
-    )
+    def __init__(self, price, order_id, product, link):
+        super().__init__(title="🎴 NẠP THẺ CÀO")
+
+        self.price = price
+        self.order_id = order_id
+        self.product = product
+        self.link = link
+
+        self.telco = discord.ui.TextInput(
+            label="Loại thẻ",
+            placeholder="VIETTEL / MOBIFONE / VINAPHONE"
+        )
+
+        self.serial = discord.ui.TextInput(
+            label="Số seri"
+        )
+
+        self.code = discord.ui.TextInput(
+            label="Mã thẻ"
+        )
+
+        self.add_item(self.telco)
+        self.add_item(self.serial)
+        self.add_item(self.code)
 
     async def on_submit(self, interaction: discord.Interaction):
 
         embed = discord.Embed(
-            title="⏳ ĐANG XỬ LÝ THẺ...",
+            title="⏳ ĐANG KIỂM TRA THẺ...",
+            description=(
+                f"📦 Sản phẩm: {self.product}\n"
+                f"💰 Mệnh giá: {self.price:,} VND\n"
+                f"🧾 Mã đơn: {self.order_id}"
+            ),
             color=discord.Color.yellow()
         )
 
@@ -57,10 +72,10 @@ class CardModal(discord.ui.Modal, title="🎴 NẠP THẺ CÀO"):
         data = {
             "APIKey": API_KEY,
             "Network": self.telco.value,
-            "CardValue": self.amount.value,
+            "CardValue": self.price,
             "CardSeri": self.serial.value,
             "CardCode": self.code.value,
-            "RequestId": generate_code()
+            "RequestId": self.order_id
         }
 
         try:
@@ -69,11 +84,9 @@ class CardModal(discord.ui.Modal, title="🎴 NẠP THẺ CÀO"):
 
             if res["status"] == 1:
 
-                order = orders.get(interaction.channel.id)
-
                 embed = discord.Embed(
-                    title="✅ NẠP THẺ THÀNH CÔNG",
-                    description=f"📥 Link tải:\n{order['link']}",
+                    title="✅ THANH TOÁN THÀNH CÔNG",
+                    description=f"📥 Link tải:\n{self.link}",
                     color=discord.Color.green()
                 )
 
@@ -93,155 +106,97 @@ class CardModal(discord.ui.Modal, title="🎴 NẠP THẺ CÀO"):
 
             embed = discord.Embed(
                 title="❌ LỖI API",
-                description="Không thể kết nối máy chủ nạp thẻ.",
+                description="Không thể kết nối API.",
                 color=discord.Color.red()
             )
 
             await interaction.followup.send(embed=embed)
 
 
-# ===================================
-# VIEW CHỌN THANH TOÁN
-# ===================================
-
 class PaymentView(discord.ui.View):
 
-    def __init__(self, price, product_name, code):
+    def __init__(self, bank_price, card_price, product, link):
         super().__init__(timeout=None)
-        self.price = price
-        self.product_name = product_name
-        self.code = code
 
-    @discord.ui.button(label="💳 CHUYỂN KHOẢN", style=discord.ButtonStyle.primary)
+        self.bank_price = bank_price
+        self.card_price = card_price
+        self.product = product
+        self.link = link
+        self.code = generate_code()
+
+    @discord.ui.button(label="💳 Chuyển khoản", style=discord.ButtonStyle.green)
     async def bank(self, interaction: discord.Interaction, button: discord.ui.Button):
 
-        vietqr = f"https://img.vietqr.io/image/{BANK}-{ACCOUNT}-compact2.png?amount={self.price}&addInfo=DH_{self.code}&accountName={ACCOUNT_NAME}"
+        if not anti_spam(interaction.user.id):
+
+            await interaction.response.send_message(
+                "⏳ Bạn đang thao tác quá nhanh.",
+                ephemeral=True
+            )
+            return
 
         embed = discord.Embed(
-            title="💳 THANH TOÁN QR",
+            title="💳 THANH TOÁN CHUYỂN KHOẢN",
             description=(
-                f"📦 **Sản phẩm:** {self.product_name}\n"
-                f"💰 **Số tiền:** {self.price} VND\n"
-                f"🆔 **Nội dung CK:** DH_{self.code}"
+                f"📦 **Sản phẩm:** {self.product}\n"
+                f"💰 **Số tiền:** {self.bank_price:,} VND\n"
+                f"🧾 **Mã đơn:** {self.code}\n\n"
+                "⚠ **Lưu ý:**\n"
+                f"• Nội dung: DH_{self.code}\n"
+                "• Chuyển khoản đúng số tiền\n"
+                "• Sai nội dung thì sẽ không hoàn tiền lại.\n\n"
+                "Sau khi chuyển khoản vui lòng chờ admin xác minh thủ công ^w^."
             ),
             color=discord.Color.green()
         )
-
-        embed.set_image(url=vietqr)
 
         await interaction.response.send_message(embed=embed)
 
-    @discord.ui.button(label="🎴 NẠP CARD", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(label="🎴 Nạp thẻ", style=discord.ButtonStyle.blurple)
     async def card(self, interaction: discord.Interaction, button: discord.ui.Button):
 
-        await interaction.response.send_modal(CardModal())
+        if not anti_spam(interaction.user.id):
 
+            await interaction.response.send_message(
+                "⏳ Bạn đang thao tác quá nhanh.",
+                ephemeral=True
+            )
+            return
 
-# ===================================
-# VIEW MUA HÀNG
-# ===================================
-
-class BuyView(discord.ui.View):
-
-    def __init__(self, price, product_name, download_link):
-        super().__init__(timeout=None)
-        self.price = price
-        self.product_name = product_name
-        self.download_link = download_link
-
-    @discord.ui.button(label="🛒 MUA NGAY", style=discord.ButtonStyle.success)
-    async def buy(self, interaction: discord.Interaction, button: discord.ui.Button):
-
-        guild = interaction.guild
-        user = interaction.user
-        code = generate_code()
-
-        category = discord.utils.get(guild.categories, name=ORDERS_CATEGORY_NAME)
-
-        overwrites = {
-            guild.default_role: discord.PermissionOverwrite(view_channel=False),
-            user: discord.PermissionOverwrite(view_channel=True, send_messages=True),
-            guild.me: discord.PermissionOverwrite(view_channel=True)
-        }
-
-        channel = await guild.create_text_channel(
-            name=f"order-{code}",
-            category=category,
-            overwrites=overwrites
+        await interaction.response.send_modal(
+            CardModal(
+                self.card_price,
+                self.code,
+                self.product,
+                self.link
+            )
         )
 
-        orders[channel.id] = {
-            "code": code,
-            "price": self.price,
-            "product": self.product_name,
-            "buyer": user.id,
-            "link": self.download_link
-        }
 
-        price_text = f"{self.price:,}".replace(",", ".") + " VND"
+class SellSystem(commands.Cog):
+
+    def __init__(self, bot):
+        self.bot = bot
+
+    @commands.command()
+    async def sell(self, ctx, bank_price: int, card_price: int, product: str, link: str):
 
         embed = discord.Embed(
-            title="🧾 TẠO ĐƠN HÀNG",
+            title="🛒 MUA SẢN PHẨM",
             description=(
-                f"📦 **Sản phẩm:** {self.product_name}\n"
-                f"💰 **Giá:** {price_text}\n"
-                f"🆔 **Mã đơn:** {code}\n\n"
-                "👇 Chọn phương thức thanh toán"
+                f"📦 **Sản phẩm:** {product}\n\n"
+                f"💳 Chuyển khoản: {bank_price:,} VND\n"
+                f"🎴 Nạp card: {card_price:,} VND\n\n"
+                "Chọn phương thức thanh toán bên dưới."
             ),
-            color=discord.Color.orange()
-        )
-
-        await channel.send(
-            content=user.mention,
-            embed=embed,
-            view=PaymentView(self.price, self.product_name, code)
-        )
-
-        await interaction.response.send_message(
-            f"✅ Đã tạo đơn: {channel.mention}",
-            ephemeral=True
-        )
-
-
-# ===================================
-# SETUP SELL
-# ===================================
-
-def setup_sell(bot):
-
-    @bot.command()
-    async def sell(ctx, price: int, link: str):
-
-        product_name = ctx.channel.name
-
-        embed = discord.Embed(
-            title="🛍️ MUA SẢN PHẨM",
-            description=(
-                "Nhấn nút bên dưới để mua.\n\n"
-                "💳 Thanh toán QR\n"
-                "🎴 Nạp thẻ cào"
-            ),
-            color=discord.Color.green()
+            color=discord.Color.blue()
         )
 
         await ctx.send(
             embed=embed,
-            view=BuyView(price, product_name, link)
+            view=PaymentView(bank_price, card_price, product, link)
         )
 
-    @bot.command()
-    @commands.has_permissions(administrator=True)
-    async def dabank(ctx):
 
-        if ctx.channel.id not in orders:
-            return
-
-        order = orders[ctx.channel.id]
-
-        embed = discord.Embed(
-            title="✅ THANH TOÁN THÀNH CÔNG",
-            description=f"📥 Link tải:\n{order['link']}",
-            color=discord.Color.green()
-        )
-
-        await ctx.send(embed=embed)
+async def setup(bot):
+    await bot.add_cog(SellSystem(bot))
