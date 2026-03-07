@@ -11,13 +11,7 @@ API_KEY = "0c8672410bf6ba8caeb009508b026ed9"
 cooldowns = {}
 card_queue = asyncio.Queue()
 
-# ======================
-# BANK STORAGE
-# ======================
-
 bank_waiting = {}
-
-# ======================
 
 def generate_code():
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
@@ -34,10 +28,6 @@ def anti_spam(user_id):
     cooldowns[user_id] = now
     return True
 
-
-# ======================
-# CANCEL CONFIRM
-# ======================
 
 class CancelConfirm(discord.ui.View):
 
@@ -58,10 +48,6 @@ class CancelConfirm(discord.ui.View):
             ephemeral=True
         )
 
-
-# ======================
-# BANK TIMER
-# ======================
 
 async def bank_countdown(message, order_code):
 
@@ -96,10 +82,6 @@ async def bank_countdown(message, order_code):
 
     await message.edit(embed=embed, view=None)
 
-
-# ======================
-# CARD MODAL
-# ======================
 
 class CardModal(discord.ui.Modal):
 
@@ -154,10 +136,6 @@ class CardModal(discord.ui.Modal):
         })
 
 
-# ======================
-# PAYMENT VIEW
-# ======================
-
 class PaymentView(discord.ui.View):
 
     def __init__(self, bank_price, card_price, product, link, order_code):
@@ -203,7 +181,8 @@ class PaymentView(discord.ui.View):
             "channel": interaction.channel.id,
             "link": self.link,
             "product": self.product,
-            "price": self.bank_price
+            "price": self.bank_price,
+            "content": self.code
         }
 
         asyncio.create_task(bank_countdown(msg, self.code))
@@ -242,10 +221,6 @@ class PaymentView(discord.ui.View):
             view=CancelConfirm()
         )
 
-
-# ======================
-# BUY VIEW
-# ======================
 
 class BuyView(discord.ui.View):
 
@@ -312,10 +287,6 @@ class BuyView(discord.ui.View):
         )
 
 
-# ======================
-# CARD WORKER
-# ======================
-
 async def card_worker(bot):
 
     while True:
@@ -370,10 +341,6 @@ async def card_worker(bot):
         await asyncio.sleep(5)
 
 
-# ======================
-# SELL SYSTEM
-# ======================
-
 class SellSystem(commands.Cog):
 
     def __init__(self, bot):
@@ -402,57 +369,34 @@ class SellSystem(commands.Cog):
         )
 
     @commands.command()
-    async def dabank(self, ctx):
-
-        name = ctx.channel.name
-
-        code = name.split("-")[0]
+    async def dabank(self, ctx, code: str):
 
         if code in bank_waiting:
 
             data = bank_waiting[code]
 
             embed = discord.Embed(
-                title="💳 XÁC NHẬN THANH TOÁN THÀNH CÔNG",
-                description="Giao dịch chuyển khoản đã được xác nhận.",
+                title="🎉 THANH TOÁN THÀNH CÔNG",
+                description="Giao dịch đã được **ADMIN xác nhận**",
                 color=discord.Color.green()
             )
 
-            embed.add_field(
-                name="📦 Tên đơn hàng",
-                value=data["product"],
-                inline=False
-            )
+            embed.add_field(name="📦 Sản phẩm", value=data["product"], inline=False)
+            embed.add_field(name="💰 Số tiền", value=f"{data['price']:,} VND", inline=False)
+            embed.add_field(name="🧾 Mã đơn", value=code, inline=True)
+            embed.add_field(name="📥 Nội dung CK", value=data["content"], inline=True)
 
-            embed.add_field(
-                name="💰 Số tiền thanh toán",
-                value=f"{data['price']:,} VND",
-                inline=True
-            )
-
-            embed.add_field(
-                name="🧾 Mã đơn",
-                value=code,
-                inline=True
-            )
-
-            embed.add_field(
-                name="🏦 Nội dung chuyển khoản",
-                value=f"`{code}`",
-                inline=False
-            )
-
-            embed.add_field(
-                name="📥 Link tải sản phẩm",
-                value=data["link"],
-                inline=False
-            )
+            embed.add_field(name="📂 Link tải", value=data["link"], inline=False)
 
             embed.set_footer(text="Cảm ơn bạn đã mua hàng ❤️")
 
             await ctx.send(embed=embed)
 
             del bank_waiting[code]
+
+        else:
+
+            await ctx.send("❌ Không tìm thấy mã đơn.")
 
 
 async def setup(bot):
