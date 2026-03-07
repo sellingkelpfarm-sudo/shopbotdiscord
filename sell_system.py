@@ -23,7 +23,7 @@ class BuyView(discord.ui.View):
         self.product_name = product_name
         self.download_link = download_link
 
-    @discord.ui.button(label="🛒 MUA", style=discord.ButtonStyle.success)
+    @discord.ui.button(label="🛒 MUA NGAY", style=discord.ButtonStyle.success)
     async def buy(self, interaction: discord.Interaction, button: discord.ui.Button):
 
         guild = interaction.guild
@@ -53,21 +53,21 @@ class BuyView(discord.ui.View):
             "link": self.download_link
         }
 
-        price_text = f"{self.price:,}".replace(",", ".") + "VND"
+        price_text = f"{self.price:,}".replace(",", ".") + " VND"
 
         embed = discord.Embed(
-            title=f"🧾 XÁC NHẬN ĐƠN HÀNG {self.product_name}",
+            title="🧾 TẠO ĐƠN HÀNG THÀNH CÔNG",
             description=(
-                f"📦 Tên đơn hàng: **{self.product_name}**\n"
-                f"💰 Số tiền: **{price_text}**\n"
-                f"🆔 Mã giao dịch: **{code}**\n\n"
-                "👉 Nhấn nút **XÁC NHẬN GIAO DỊCH** để lấy QR thanh toán."
+                f"📦 **Sản phẩm:** `{self.product_name}`\n"
+                f"💰 **Giá:** `{price_text}`\n"
+                f"🆔 **Mã giao dịch:** `{code}`\n\n"
+                "👉 Nhấn **XÁC NHẬN GIAO DỊCH** để lấy mã QR thanh toán."
             ),
             color=discord.Color.orange()
         )
 
         await channel.send(
-            content=user.mention,
+            content=f"👤 {user.mention}",
             embed=embed,
             view=ConfirmView(self.price, self.product_name, code)
         )
@@ -152,7 +152,10 @@ def setup_sell(bot):
 
         embed = discord.Embed(
             title="🛍️ MUA SẢN PHẨM",
-            description='Vui lòng chọn nút **"MUA"** ở dưới đây để bắt đầu mua.',
+            description=(
+                "Nhấn nút **🛒 MUA NGAY** bên dưới để tạo đơn hàng.\n\n"
+                "📌 Sau khi tạo đơn bạn sẽ nhận được **QR thanh toán**."
+            ),
             color=discord.Color.green()
         )
 
@@ -172,19 +175,19 @@ def setup_sell(bot):
 
         order = orders[ctx.channel.id]
 
-        price_text = f"{order['price']:,}".replace(",", ".") + "VND"
+        price_text = f"{order['price']:,}".replace(",", ".") + " VND"
 
         embed = discord.Embed(
-            title="✅ XÁC NHẬN THANH TOÁN THÀNH CÔNG",
+            title="✅ THANH TOÁN THÀNH CÔNG",
             description=(
-                f"📦 Tên đơn hàng: **{order['product']}**\n"
-                f"💰 Số tiền: **{price_text}**\n"
-                f"🆔 Mã giao dịch: **{order['code']}**\n\n"
+                f"📦 **Sản phẩm:** `{order['product']}`\n"
+                f"💰 **Số tiền:** `{price_text}`\n"
+                f"🆔 **Mã giao dịch:** `{order['code']}`\n\n"
 
                 f"📥 **Link tải:**\n{order['link']}\n\n"
 
                 "━━━━━━━━━━━━━━━━━━━━━━\n"
-                "💚 CẢM ƠN BẠN ĐÃ TIN TƯỞNG LỰA CHỌN SHOP SCHEMATICS CỦA CHÚNG TÔI!"
+                "💚 **CẢM ƠN BẠN ĐÃ ỦNG HỘ SHOP!**"
             ),
             color=discord.Color.green()
         )
