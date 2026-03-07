@@ -467,7 +467,13 @@ class SellSystem(commands.Cog):
 
             embed = discord.Embed(
                 title="✅XÁC NHẬN THANH TOÁN THÀNH CÔNG!",
-                description=f"📥 Link tải:\n{link}",
+                description=(
+                    f"📦 **Sản phẩm:** {self.product}\n"
+                    f"💰 **Số tiền:** {self.bank_price:,} VND\n"
+                    f"🧾 **Mã đơn:** {self.code}\n\n"
+                        
+                    f"📥 Link tải:\n{data['link']}"
+                ),
                 color=discord.Color.green()
             )
 
@@ -478,4 +484,5 @@ class SellSystem(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(SellSystem(bot))
+
 
