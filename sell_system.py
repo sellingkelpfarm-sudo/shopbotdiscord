@@ -113,9 +113,9 @@ class ConfirmView(discord.ui.View):
             seconds = time_left % 60
 
             embed.description = (
-                f"📦 **Tên đơn hàng:** {self.product_name}\n"
-                f"💰 **Số tiền:** {price_text}\n"
-                f"🆔 **Mã giao dịch:** {self.code}\n\n"
+                f"📦 **Sản phẩm:** `{self.product_name}`\n"
+                f"💰 **Giá:** `{price_text}`\n"
+                f"🆔 **Mã giao dịch:** `{code}`\n\n"
 
                 "⚠ **Lưu ý:**\n"
                 "• Không chỉnh sửa nội dung chuyển khoản\n"
@@ -196,9 +196,10 @@ def setup_sell(bot):
             color=discord.Color.green()
         )
 
-        embed.set_footer(text="Shop Schematic • Chúc bạn sử dụng vui vẻ!")
+        embed.set_footer(text="LoTuss's Schematics • Chúc bạn sử dụng vui vẻ!")
 
         await ctx.send(embed=embed)
+
 
 
 
