@@ -128,7 +128,7 @@ class ConfirmView(discord.ui.View):
 
             await asyncio.sleep(5)
 
-            time_left -= 5
+            time_left -= 1
 
         try:
             await qr_message.delete()
@@ -199,5 +199,6 @@ def setup_sell(bot):
         embed.set_footer(text="Shop Schematic • Chúc bạn sử dụng vui vẻ!")
 
         await ctx.send(embed=embed)
+
 
 
