@@ -37,7 +37,10 @@ def anti_spam(user_id):
 
 class CancelConfirm(discord.ui.View):
 
-    @discord.ui.button(label="✅ CÓ", style=discord.ButtonStyle.red)
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label="✅ CÓ", style=discord.ButtonStyle.red, custom_id="confirm_cancel")
     async def yes(self, interaction: discord.Interaction, button: discord.ui.Button):
 
         await interaction.response.send_message("⏳ Kênh sẽ bị xoá sau 5 giây.")
@@ -46,7 +49,7 @@ class CancelConfirm(discord.ui.View):
 
         await interaction.channel.delete()
 
-    @discord.ui.button(label="❌ KHÔNG", style=discord.ButtonStyle.green)
+    @discord.ui.button(label="❌ KHÔNG", style=discord.ButtonStyle.green, custom_id="deny_cancel")
     async def no(self, interaction: discord.Interaction, button: discord.ui.Button):
 
         await interaction.response.send_message(
@@ -107,7 +110,11 @@ class PaymentView(discord.ui.View):
         self.link = link
         self.code = order_code
 
-    @discord.ui.button(label="💳 CHUYỂN KHOẢN", style=discord.ButtonStyle.green)
+    @discord.ui.button(
+        label="💳 CHUYỂN KHOẢN",
+        style=discord.ButtonStyle.green,
+        custom_id="pay_bank"
+    )
     async def bank(self, interaction: discord.Interaction, button: discord.ui.Button):
 
         if not anti_spam(interaction.user.id):
@@ -146,7 +153,11 @@ class PaymentView(discord.ui.View):
 
         asyncio.create_task(bank_countdown(msg, self.code))
 
-    @discord.ui.button(label="❌ HỦY ĐƠN", style=discord.ButtonStyle.red)
+    @discord.ui.button(
+        label="❌ HỦY ĐƠN",
+        style=discord.ButtonStyle.red,
+        custom_id="cancel_order"
+    )
     async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
 
         embed = discord.Embed(
@@ -168,14 +179,17 @@ class PaymentView(discord.ui.View):
 class BuyView(discord.ui.View):
 
     def __init__(self, bank_price, product, link):
-
         super().__init__(timeout=None)
 
         self.bank_price = bank_price
         self.product = product
         self.link = link
 
-    @discord.ui.button(label="🛒 MUA NGAY", style=discord.ButtonStyle.green)
+    @discord.ui.button(
+        label="🛒 MUA NGAY",
+        style=discord.ButtonStyle.green,
+        custom_id="buy_product"
+    )
     async def buy(self, interaction: discord.Interaction, button: discord.ui.Button):
 
         guild = interaction.guild
@@ -236,6 +250,11 @@ class SellSystem(commands.Cog):
 
     def __init__(self, bot):
         self.bot = bot
+
+        # đăng ký persistent view để bot restart vẫn bấm được
+        bot.add_view(BuyView(0, "product", "link"))
+        bot.add_view(PaymentView(0, "product", "link", "code"))
+        bot.add_view(CancelConfirm())
 
     @commands.command()
     async def sell(self, ctx, bank_price: int, link: str):
@@ -303,6 +322,7 @@ class SellSystem(commands.Cog):
         )
 
         embed.set_footer(text="Cảm ơn bạn đã mua hàng ❤️")
+        embed.set_footer(text="Nếu có sự cố gì thì cứ nhắn tin ở đây để được giải quyết nhé!!^w^")
 
         await ctx.send(embed=embed)
 
