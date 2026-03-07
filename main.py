@@ -82,4 +82,5 @@ threading.Thread(target=run_web).start()
 # RUN DISCORD BOT
 # ==============================
 
-bot.run("TOKEN")
+bot.run(TOKEN)
+
