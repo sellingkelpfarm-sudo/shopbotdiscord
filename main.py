@@ -34,4 +34,3 @@ bot.setup_hook = setup_hook
 TOKEN = os.getenv("TOKEN")  # Railway đọc token từ biến môi trường
 
 bot.run(TOKEN)
-
