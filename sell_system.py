@@ -6,18 +6,23 @@ import time
 import asyncio
 
 cooldowns = {}
-
-# ======================
-# BANK STORAGE
-# ======================
-
 bank_waiting = {}
 
+# ID KÊNH WEBHOOK BIẾN ĐỘNG SỐ DƯ
+BANK_CHANNEL_ID = 123456789012345678  # <-- sửa thành ID kênh của bạn
+
+
+# ======================
+# GENERATE ORDER CODE
 # ======================
 
 def generate_code():
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
 
+
+# ======================
+# ANTI SPAM
+# ======================
 
 def anti_spam(user_id):
 
@@ -37,10 +42,7 @@ def anti_spam(user_id):
 
 class CancelConfirm(discord.ui.View):
 
-    def __init__(self):
-        super().__init__(timeout=None)
-
-    @discord.ui.button(label="✅ CÓ", style=discord.ButtonStyle.red, custom_id="confirm_cancel")
+    @discord.ui.button(label="✅ CÓ", style=discord.ButtonStyle.red)
     async def yes(self, interaction: discord.Interaction, button: discord.ui.Button):
 
         await interaction.response.send_message("⏳ Kênh sẽ bị xoá sau 5 giây.")
@@ -49,7 +51,7 @@ class CancelConfirm(discord.ui.View):
 
         await interaction.channel.delete()
 
-    @discord.ui.button(label="❌ KHÔNG", style=discord.ButtonStyle.green, custom_id="deny_cancel")
+    @discord.ui.button(label="❌ KHÔNG", style=discord.ButtonStyle.green)
     async def no(self, interaction: discord.Interaction, button: discord.ui.Button):
 
         await interaction.response.send_message(
@@ -110,11 +112,7 @@ class PaymentView(discord.ui.View):
         self.link = link
         self.code = order_code
 
-    @discord.ui.button(
-        label="💳 CHUYỂN KHOẢN",
-        style=discord.ButtonStyle.green,
-        custom_id="pay_bank"
-    )
+    @discord.ui.button(label="💳 CHUYỂN KHOẢN", style=discord.ButtonStyle.green)
     async def bank(self, interaction: discord.Interaction, button: discord.ui.Button):
 
         if not anti_spam(interaction.user.id):
@@ -153,11 +151,7 @@ class PaymentView(discord.ui.View):
 
         asyncio.create_task(bank_countdown(msg, self.code))
 
-    @discord.ui.button(
-        label="❌ HỦY ĐƠN",
-        style=discord.ButtonStyle.red,
-        custom_id="cancel_order"
-    )
+    @discord.ui.button(label="❌ HỦY ĐƠN", style=discord.ButtonStyle.red)
     async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
 
         embed = discord.Embed(
@@ -179,17 +173,14 @@ class PaymentView(discord.ui.View):
 class BuyView(discord.ui.View):
 
     def __init__(self, bank_price, product, link):
+
         super().__init__(timeout=None)
 
         self.bank_price = bank_price
         self.product = product
         self.link = link
 
-    @discord.ui.button(
-        label="🛒 MUA NGAY",
-        style=discord.ButtonStyle.green,
-        custom_id="buy_product"
-    )
+    @discord.ui.button(label="🛒 MUA NGAY", style=discord.ButtonStyle.green)
     async def buy(self, interaction: discord.Interaction, button: discord.ui.Button):
 
         guild = interaction.guild
@@ -251,10 +242,9 @@ class SellSystem(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-        # đăng ký persistent view để bot restart vẫn bấm được
-        bot.add_view(BuyView(0, "product", "link"))
-        bot.add_view(PaymentView(0, "product", "link", "code"))
-        bot.add_view(CancelConfirm())
+    # ======================
+    # COMMAND SELL
+    # ======================
 
     @commands.command()
     async def sell(self, ctx, bank_price: int, link: str):
@@ -276,58 +266,56 @@ class SellSystem(commands.Cog):
             view=BuyView(bank_price, product, link)
         )
 
-    @commands.command()
-    async def dabank(self, ctx, order_code: str):
+    # ======================
+    # AUTO BANK DETECT
+    # ======================
+
+    @commands.Cog.listener()
+    async def on_message(self, message):
+
+        if message.channel.id != BANK_CHANNEL_ID:
+            return
+
+        if message.author.bot is False:
+            return
+
+        content = message.content.strip()
+
+        if len(content) < 6:
+            return
+
+        order_code = content[-6:].upper()
 
         if order_code not in bank_waiting:
-            await ctx.send("❌ Không tìm thấy đơn.")
             return
 
         data = bank_waiting[order_code]
 
+        channel = self.bot.get_channel(data["channel"])
+
+        if channel is None:
+            return
+
         embed = discord.Embed(
             title="🎉 THANH TOÁN THÀNH CÔNG",
-            description="Cảm ơn bạn đã mua hàng!",
+            description="Đã xác nhận giao dịch!",
             color=discord.Color.green()
         )
 
-        embed.add_field(
-            name="📦 Sản phẩm",
-            value=data["product"],
-            inline=False
-        )
+        embed.add_field(name="📦 Sản phẩm", value=data["product"], inline=False)
 
-        embed.add_field(
-            name="💰 Số tiền",
-            value=f"{data['price']:,} VND",
-            inline=True
-        )
+        embed.add_field(name="💰 Số tiền", value=f"{data['price']:,} VND")
 
-        embed.add_field(
-            name="🧾 Mã đơn",
-            value=order_code,
-            inline=True
-        )
+        embed.add_field(name="🧾 Mã đơn", value=order_code)
 
-        embed.add_field(
-            name="💬 Nội dung CK",
-            value=f"`{order_code}`",
-            inline=False
-        )
+        embed.add_field(name="📥 Link tải", value=data["link"], inline=False)
 
-        embed.add_field(
-            name="📥 Link tải",
-            value=data["link"],
-            inline=False
-        )
+        embed.set_footer(text="Cảm ơn bạn đã mua hàng ❤️|Nếu có sự cố nào thì hãy nhắn tin tại đây để admin giải quyết nhé!^w^")
 
-        embed.set_footer(text="Cảm ơn bạn đã mua hàng❤️|Nếu có sự cố gì thì cứ nhắn tin ở đây để được giải quyết nhé!!^w^")
-
-        await ctx.send(embed=embed)
+        await channel.send(embed=embed)
 
         del bank_waiting[order_code]
 
 
 async def setup(bot):
     await bot.add_cog(SellSystem(bot))
-
