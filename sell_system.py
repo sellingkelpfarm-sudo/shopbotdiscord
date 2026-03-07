@@ -7,7 +7,7 @@ BANK = "MB"
 ACCOUNT = "0764495919"
 ACCOUNT_NAME = "NGUYENTHANHDAT"
 
-ORDERS_CATEGORY_NAME = "Orders"
+ORDERS_CATEGORY_NAME = "orders"
 
 orders = {}
 
@@ -103,21 +103,23 @@ class ConfirmView(discord.ui.View):
             color=discord.Color.green()
         )
 
-    embed.set_image(url=vietqr)
+        embed.set_image(url=vietqr)
 
         await interaction.response.send_message(embed=embed)
 
+        # Lấy message vừa gửi
         qr_message = await interaction.original_response()
 
+        # Đợi 5 phút
         await asyncio.sleep(300)
 
-    try:
-        await qr_message.delete()
-        await interaction.channel.send(
-            "⚠ **ĐÃ QUÁ GIỜ THỰC HIỆN GIAO DỊCH. VUI LÒNG THỬ LẠI.**"
-        )
-    except:
-        pass
+        try:
+            await qr_message.delete()
+            await interaction.channel.send(
+                "⚠ **ĐÃ QUÁ GIỜ THỰC HIỆN GIAO DỊCH. VUI LÒNG THỬ LẠI.**"
+            )
+        except:
+            pass
 
 def setup_sell(bot):
 
@@ -165,6 +167,3 @@ def setup_sell(bot):
         )
 
         await ctx.send(embed=embed)
-
-
-
