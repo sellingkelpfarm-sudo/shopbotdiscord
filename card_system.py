@@ -39,6 +39,13 @@ db.commit()
 cooldown = {}
 COOLDOWN_TIME = 10
 
+# ======================
+# THEO DÕI HOẠT ĐỘNG ĐƠN
+# ======================
+
+order_activity = {}
+ORDER_TIMEOUT = 900  # 15 phút
+
 
 # ======================
 # GENERATE ORDER CODE
@@ -151,6 +158,50 @@ async def auto_check(interaction, params, product, price, order_code, link):
 
 
 # ======================
+# AUTO ĐÓNG KÊNH SAU 15 PHÚT
+# ======================
+
+async def auto_close_channel(channel, order_code):
+
+    await asyncio.sleep(ORDER_TIMEOUT)
+
+    if order_code in order_activity and not order_activity[order_code]:
+
+        await channel.send("⌛ Đơn hàng đã bị đóng do không thanh toán trong 15 phút.")
+
+        await asyncio.sleep(5)
+
+        await channel.delete()
+
+
+# ======================
+# VIEW XÁC NHẬN HỦY
+# ======================
+
+class CancelConfirmView(discord.ui.View):
+
+    def __init__(self):
+        super().__init__(timeout=30)
+
+    @discord.ui.button(label="CÓ", style=discord.ButtonStyle.red)
+    async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
+
+        await interaction.response.send_message("🗑 Kênh sẽ bị xóa sau 5 giây...")
+
+        await asyncio.sleep(5)
+
+        await interaction.channel.delete()
+
+    @discord.ui.button(label="KHÔNG", style=discord.ButtonStyle.gray)
+    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
+
+        await interaction.response.send_message(
+            "✅ Đã giữ lại đơn hàng.",
+            ephemeral=True
+        )
+
+
+# ======================
 # MODAL NHẬP THẺ
 # ======================
 
@@ -170,6 +221,8 @@ class CardModal(discord.ui.Modal, title="💳 NẠP THẺ CÀO"):
         self.link = link
 
     async def on_submit(self, interaction: discord.Interaction):
+
+        order_activity[self.order_code] = True
 
         user = interaction.user.id
 
@@ -300,6 +353,8 @@ class CardPaymentView(discord.ui.View):
     @discord.ui.button(label="💳 THANH TOÁN CARD", style=discord.ButtonStyle.green)
     async def card(self, interaction: discord.Interaction, button: discord.ui.Button):
 
+        order_activity[self.order_code] = True
+
         await interaction.response.send_message(
             "📡 Chọn loại thẻ:",
             view=TelcoView(
@@ -308,6 +363,15 @@ class CardPaymentView(discord.ui.View):
                 self.price,
                 self.link
             ),
+            ephemeral=True
+        )
+
+    @discord.ui.button(label="❌ HỦY ĐƠN", style=discord.ButtonStyle.red)
+    async def cancel_order(self, interaction: discord.Interaction, button: discord.ui.Button):
+
+        await interaction.response.send_message(
+            "⚠️ BẠN CÓ CHẮC HỦY ĐƠN HÀNG CHỨ?",
+            view=CancelConfirmView(),
             ephemeral=True
         )
 
@@ -378,6 +442,12 @@ class BuyView(discord.ui.View):
             )
         )
 
+        order_activity[order_code] = False
+
+        asyncio.create_task(
+            auto_close_channel(channel, order_code)
+        )
+
         await interaction.response.send_message(
             f"✅ Đơn của bạn: {channel.mention}",
             ephemeral=True
@@ -408,10 +478,6 @@ class CardSystem(commands.Cog):
             view=BuyView(price, product, link)
         )
 
-
-# ======================
-# FIX LOAD COG DUPLICATE
-# ======================
 
 async def setup(bot):
     if not bot.get_cog("CardSystem"):
