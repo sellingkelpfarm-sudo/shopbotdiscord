@@ -6,6 +6,7 @@ import time
 import asyncio
 
 cooldowns = {}
+buy_cooldowns = {}
 bank_waiting = {}
 order_activity = {}
 
@@ -29,7 +30,7 @@ def generate_code():
 
 
 # ======================
-# ANTI SPAM
+# ANTI SPAM THANH TOÁN
 # ======================
 
 def anti_spam(user_id):
@@ -41,6 +42,22 @@ def anti_spam(user_id):
             return False
 
     cooldowns[user_id] = now
+    return True
+
+
+# ======================
+# ANTI SPAM TẠO ĐƠN
+# ======================
+
+def anti_spam_buy(user_id):
+
+    now = time.time()
+
+    if user_id in buy_cooldowns:
+        if now - buy_cooldowns[user_id] < 10:
+            return False
+
+    buy_cooldowns[user_id] = now
     return True
 
 
@@ -210,6 +227,14 @@ class BuyView(discord.ui.View):
 
     @discord.ui.button(label="🛒 MUA NGAY", style=discord.ButtonStyle.green)
     async def buy(self, interaction: discord.Interaction, button: discord.ui.Button):
+
+        if not anti_spam_buy(interaction.user.id):
+
+            await interaction.response.send_message(
+                "⏳ Bạn đang tạo đơn quá nhanh. Vui lòng đợi vài giây.",
+                ephemeral=True
+            )
+            return
 
         guild = interaction.guild
 
