@@ -1,21 +1,33 @@
 import discord
 from discord.ext import commands
-import requests
 import random
 import string
 import time
 import asyncio
 
-API_KEY = "0c8672410bf6ba8caeb009508b026ed9"
-
 cooldowns = {}
-card_queue = asyncio.Queue()
-
 bank_waiting = {}
 
-def generate_code():
-    return ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
+# ID KÊNH WEBHOOK BIẾN ĐỘNG SỐ DƯ
+BANK_CHANNEL_ID = 1479440469120389221
 
+
+# ======================
+# GENERATE ORDER CODE (ANTI DUPLICATE)
+# ======================
+
+def generate_code():
+
+    while True:
+        code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
+
+        if code not in bank_waiting:
+            return code
+
+
+# ======================
+# ANTI SPAM
+# ======================
 
 def anti_spam(user_id):
 
@@ -28,6 +40,10 @@ def anti_spam(user_id):
     cooldowns[user_id] = now
     return True
 
+
+# ======================
+# CANCEL CONFIRM
+# ======================
 
 class CancelConfirm(discord.ui.View):
 
@@ -48,6 +64,10 @@ class CancelConfirm(discord.ui.View):
             ephemeral=True
         )
 
+
+# ======================
+# BANK TIMER
+# ======================
 
 async def bank_countdown(message, order_code):
 
@@ -83,54 +103,9 @@ async def bank_countdown(message, order_code):
     await message.edit(embed=embed, view=None)
 
 
-async def bank_auto_check(bot):
-
-    while True:
-
-        try:
-
-            url = "https://my.sepay.vn/userapi/transactions/list"
-
-            headers = {
-                "Authorization": "Bearer YOUR_SEPAY_API"
-            }
-
-            res = requests.get(url, headers=headers).json()
-
-            if "transactions" in res:
-
-                for tx in res["transactions"]:
-
-                    content = tx.get("transaction_content", "")
-
-                    for order in list(bank_waiting):
-
-                        if order in content:
-
-                            data = bank_waiting[order]
-
-                            channel = bot.get_channel(data["channel"])
-
-                            embed = discord.Embed(
-                                title="🎉 THANH TOÁN THÀNH CÔNG",
-                                color=discord.Color.green()
-                            )
-
-                            embed.add_field(name="📦 Sản phẩm", value=data["product"], inline=False)
-                            embed.add_field(name="💰 Số tiền", value=f"{data['price']:,} VND", inline=True)
-                            embed.add_field(name="🧾 Mã đơn", value=order, inline=True)
-                            embed.add_field(name="🏦 Nội dung CK", value=data["content"], inline=False)
-                            embed.add_field(name="📥 Link tải", value=data["link"], inline=False)
-
-                            await channel.send(embed=embed)
-
-                            del bank_waiting[order]
-
-        except:
-            pass
-
-        await asyncio.sleep(15)
-
+# ======================
+# PAYMENT VIEW
+# ======================
 
 class PaymentView(discord.ui.View):
 
@@ -161,7 +136,7 @@ class PaymentView(discord.ui.View):
                 f"📦 **Sản phẩm:** {self.product}\n"
                 f"💰 **Số tiền:** {self.bank_price:,} VND\n"
                 f"🧾 **Mã đơn:** {self.code}\n\n"
-                f"📥 Nội dung CK: **{self.code}**"
+                f"📥 **Nội dung CK:** `{self.code}`"
             ),
             color=discord.Color.green()
         )
@@ -176,8 +151,7 @@ class PaymentView(discord.ui.View):
             "channel": interaction.channel.id,
             "link": self.link,
             "product": self.product,
-            "price": self.bank_price,
-            "content": self.code
+            "price": self.bank_price
         }
 
         asyncio.create_task(bank_countdown(msg, self.code))
@@ -196,6 +170,10 @@ class PaymentView(discord.ui.View):
             view=CancelConfirm()
         )
 
+
+# ======================
+# BUY VIEW
+# ======================
 
 class BuyView(discord.ui.View):
 
@@ -260,14 +238,17 @@ class BuyView(discord.ui.View):
         )
 
 
+# ======================
+# SELL SYSTEM
+# ======================
+
 class SellSystem(commands.Cog):
 
     def __init__(self, bot):
         self.bot = bot
-        bot.loop.create_task(bank_auto_check(bot))
 
-    @commands.command()
-    async def sell(self, ctx, bank_price: int, card_price: int, link: str):
+    @commands.command(name="sellbank")
+    async def sellbank(self, ctx, bank_price: int, link: str):
 
         product = ctx.channel.name
 
@@ -286,27 +267,74 @@ class SellSystem(commands.Cog):
             view=BuyView(bank_price, product, link)
         )
 
-    @commands.command()
-    async def dabank(self, ctx, code: str):
+    @commands.command(name="dabank")
+    @commands.has_permissions(administrator=True)
+    async def dabank(self, ctx, order_code: str):
 
-        if code in bank_waiting:
+        order_code = order_code.upper()
 
-            data = bank_waiting[code]
+        if order_code not in bank_waiting:
+            await ctx.send("❌ Không tìm thấy mã đơn này.")
+            return
 
-            embed = discord.Embed(
-                title="🎉 ADMIN XÁC NHẬN THANH TOÁN",
-                color=discord.Color.green()
-            )
+        data = bank_waiting[order_code]
 
-            embed.add_field(name="📦 Sản phẩm", value=data["product"], inline=False)
-            embed.add_field(name="💰 Số tiền", value=f"{data['price']:,} VND", inline=True)
-            embed.add_field(name="🧾 Mã đơn", value=code, inline=True)
-            embed.add_field(name="🏦 Nội dung CK", value=data["content"], inline=False)
-            embed.add_field(name="📥 Link tải", value=data["link"], inline=False)
+        channel = self.bot.get_channel(data["channel"])
 
-            await ctx.send(embed=embed)
+        embed = discord.Embed(
+            title="🎉 THANH TOÁN THÀNH CÔNG (ADMIN)",
+            description="Admin đã xác nhận giao dịch!",
+            color=discord.Color.green()
+        )
 
-            del bank_waiting[code]
+        embed.add_field(name="📦 Sản phẩm", value=data["product"], inline=False)
+        embed.add_field(name="💰 Số tiền", value=f"{data['price']:,} VND")
+        embed.add_field(name="🧾 Mã đơn", value=order_code)
+        embed.add_field(name="📥 Link tải", value=data["link"], inline=False)
+
+        await channel.send(embed=embed)
+
+        del bank_waiting[order_code]
+
+        await ctx.send("✅ Đã xác nhận giao dịch thành công.")
+
+    @commands.Cog.listener()
+    async def on_message(self, message):
+
+        if message.channel.id != BANK_CHANNEL_ID:
+            return
+
+        if message.author.bot is False:
+            return
+
+        content = message.content.strip()
+
+        if len(content) < 6:
+            return
+
+        order_code = content[-6:].upper()
+
+        if order_code not in bank_waiting:
+            return
+
+        data = bank_waiting[order_code]
+
+        channel = self.bot.get_channel(data["channel"])
+
+        embed = discord.Embed(
+            title="🎉 THANH TOÁN THÀNH CÔNG",
+            description="Đã xác nhận giao dịch!",
+            color=discord.Color.green()
+        )
+
+        embed.add_field(name="📦 Sản phẩm", value=data["product"], inline=False)
+        embed.add_field(name="💰 Số tiền", value=f"{data['price']:,} VND")
+        embed.add_field(name="🧾 Mã đơn", value=order_code)
+        embed.add_field(name="📥 Link tải", value=data["link"], inline=False)
+
+        await channel.send(embed=embed)
+
+        del bank_waiting[order_code]
 
 
 async def setup(bot):
