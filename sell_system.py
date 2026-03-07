@@ -243,11 +243,11 @@ class SellSystem(commands.Cog):
         self.bot = bot
 
     # ======================
-    # COMMAND SELL
+    # COMMAND SELLBANK
     # ======================
 
     @commands.command()
-    async def sell(self, ctx, bank_price: int, link: str):
+    async def sellbank(self, ctx, bank_price: int, link: str):
 
         product = ctx.channel.name
 
@@ -319,5 +319,3 @@ class SellSystem(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(SellSystem(bot))
-
-
