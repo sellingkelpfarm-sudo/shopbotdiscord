@@ -31,10 +31,8 @@ intents=intents
 
 @bot.event
 async def on_ready():
-print("=================================")
 print(f"Bot đã đăng nhập: {bot.user}")
 print("Bot đang hoạt động...")
-print("=================================")
 
 # ========================
 
@@ -81,3 +79,4 @@ if TOKEN is None:
 print("Không tìm thấy TOKEN trong Railway variables")
 else:
 bot.run(TOKEN)
+
