@@ -14,7 +14,7 @@ import time
 
 PARTNER_ID = "45016810383"
 PARTNER_KEY = "0c8672410bf6ba8caeb009508b026ed9"
-API_URL = "https://doithes1.vn/chargingws/v2"
+API_URL = "https://doithe1s.vn/chargingws/v2"
 
 WEBHOOK_URL = "https://discord.com/api/webhooks/1479880863243047202/uShjrO4fWTWzCpz2X30-oivNP6XqD224HhpqjBB6oiqUEcE6icMcHR8k728R-1Pv5mlg"
 
@@ -385,3 +385,4 @@ class CardSystem(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(CardSystem(bot))
+
