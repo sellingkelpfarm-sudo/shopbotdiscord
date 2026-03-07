@@ -86,7 +86,7 @@ class ConfirmView(discord.ui.View):
     @discord.ui.button(label="XÁC NHẬN GIAO DỊCH", style=discord.ButtonStyle.primary)
     async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
 
-        vietqr = f"https://img.vietqr.io/image/{BANK}-{ACCOUNT}-compact2.png?amount={self.price}&addInfo={self.code}&accountName={ACCOUNT_NAME}"
+        vietqr = f"https://img.vietqr.io/image/{BANK}-{ACCOUNT}-compact2.png?amount={self.price}&addInfo=MaDonHang_{self.code}&accountName={ACCOUNT_NAME}"
 
         price_text = f"{self.price:,}".replace(",", ".") + "VND"
 
@@ -155,10 +155,11 @@ def setup_sell(bot):
             title="XÁC NHẬN THANH TOÁN THÀNH CÔNG",
             description=(
                 f"Tên đơn hàng: {order['product']}\n"
-                f"Thông Tin Chi Tiết: {order['product']}\n"
                 f"Số Tiền: {price_text}\n"
                 f"Mã Giao Dịch: {order['code']}\n\n"
+
                 f"Link tải: {order['link']}\n"
+
                 "_+_+_+_+_+_+_+_+_+_+_+_+_+_+_+_+_+_+_+_+_+_+_\n"
                 "CẢM ƠN BẠN ĐÃ TIN TƯỞNG LỰA CHỌN SHOP SCHEMATICS CỦA CHÚNG TÔI!"
             ),
