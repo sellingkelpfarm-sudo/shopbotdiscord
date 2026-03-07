@@ -321,8 +321,7 @@ class SellSystem(commands.Cog):
             inline=False
         )
 
-        embed.set_footer(text="Cảm ơn bạn đã mua hàng ❤️")
-        embed.set_footer(text="Nếu có sự cố gì thì cứ nhắn tin ở đây để được giải quyết nhé!!^w^")
+        embed.set_footer(text="Cảm ơn bạn đã mua hàng❤️|Nếu có sự cố gì thì cứ nhắn tin ở đây để được giải quyết nhé!!^w^")
 
         await ctx.send(embed=embed)
 
@@ -331,3 +330,4 @@ class SellSystem(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(SellSystem(bot))
+
