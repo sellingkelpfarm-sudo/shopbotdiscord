@@ -176,8 +176,23 @@ class CancelConfirmView(discord.ui.View):
 
 class CardModal(discord.ui.Modal, title="💳 NẠP THẺ CÀO"):
 
-    serial = discord.ui.TextInput(label="Serial")
-    code = discord.ui.TextInput(label="Mã thẻ")
+    notice = discord.ui.TextInput(
+        label="⚠ LƯU Ý",
+        default="Nạp đúng mệnh giá thẻ. Nạp sai mệnh giá thẻ sẽ KHÔNG được hoàn tiền!",
+        required=False
+    )
+
+    serial = discord.ui.TextInput(
+        label="Serial",
+        placeholder="Nhập serial thẻ",
+        required=True
+    )
+
+    code = discord.ui.TextInput(
+        label="Mã thẻ",
+        placeholder="Nhập mã thẻ",
+        required=True
+    )
 
     def __init__(self, telco, order_code, product, price, link):
 
@@ -455,4 +470,3 @@ class CardSystem(commands.Cog):
 async def setup(bot):
     if not bot.get_cog("CardSystem"):
         await bot.add_cog(CardSystem(bot))
-
