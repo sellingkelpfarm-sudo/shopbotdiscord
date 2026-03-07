@@ -17,6 +17,8 @@ PARTNER_KEY = "0c8672410bf6ba8caeb009508b026ed9"
 
 API_URL = "https://doithes1.vn/chargingws/v2"
 
+WEBHOOK_URL = "https://discord.com/api/webhooks/1479880863243047202/uShjrO4fWTWzCpz2X30-oivNP6XqD224HhpqjBB6oiqUEcE6icMcHR8k728R-1Pv5mlg"
+
 # ==============================
 # DATABASE
 # ==============================
@@ -47,7 +49,6 @@ db.commit()
 # ==============================
 
 cooldown = {}
-
 COOLDOWN_TIME = 10
 
 # ==============================
@@ -62,6 +63,28 @@ def create_sign(code, serial):
     raw = f"{PARTNER_KEY}{code}{serial}"
     return hashlib.md5(raw.encode()).hexdigest()
 
+
+async def send_webhook(user, product, price, order_code):
+
+    data = {
+        "embeds": [
+            {
+                "title": "💰 CARD NẠP THÀNH CÔNG",
+                "color": 3066993,
+                "fields": [
+                    {"name": "👤 User", "value": f"<@{user}>"},
+                    {"name": "📦 Sản phẩm", "value": product},
+                    {"name": "💵 Số tiền", "value": f"{price:,} VND"},
+                    {"name": "🆔 Mã đơn", "value": order_code}
+                ]
+            }
+        ]
+    }
+
+    async with aiohttp.ClientSession() as session:
+        await session.post(WEBHOOK_URL, json=data)
+
+
 # ==============================
 # CANCEL VIEW
 # ==============================
@@ -72,31 +95,24 @@ class CancelConfirm(discord.ui.View):
     async def yes(self, interaction: discord.Interaction, button: discord.ui.Button):
 
         await interaction.response.send_message("⏳ Đang huỷ đơn...")
-
         await asyncio.sleep(5)
-
         await interaction.channel.delete()
 
     @discord.ui.button(label="❌ GIỮ ĐƠN", style=discord.ButtonStyle.green)
     async def no(self, interaction: discord.Interaction, button: discord.ui.Button):
 
-        await interaction.response.send_message(
-            "👍 Đơn vẫn được giữ",
-            ephemeral=True
-        )
+        await interaction.response.send_message("👍 Đơn vẫn được giữ", ephemeral=True)
 
 # ==============================
 # AUTO CHECK CARD
 # ==============================
 
-async def auto_check(interaction, params, product, price, order_code, link):
+async def auto_check(channel, params, product, price, order_code, link, user):
 
     await asyncio.sleep(10)
 
     async with aiohttp.ClientSession() as session:
-
         async with session.get(API_URL, params=params) as resp:
-
             data = await resp.json()
 
     status = int(data.get("status", 0))
@@ -113,7 +129,9 @@ async def auto_check(interaction, params, product, price, order_code, link):
         embed.add_field(name="🆔 Mã đơn", value=order_code)
         embed.add_field(name="📥 Link", value=link)
 
-        await interaction.channel.send(embed=embed)
+        await channel.send(embed=embed)
+
+        await send_webhook(user, product, price, order_code)
 
         cursor.execute(
             "UPDATE orders SET status='success' WHERE order_code=?",
@@ -151,16 +169,13 @@ class CardModal(discord.ui.Modal, title="💳 THANH TOÁN CARD"):
 
         user = interaction.user.id
 
-        if user in cooldown:
+        if user in cooldown and time.time() - cooldown[user] < COOLDOWN_TIME:
 
-            if time.time() - cooldown[user] < COOLDOWN_TIME:
-
-                await interaction.response.send_message(
-                    "⚠ Bạn đang nạp quá nhanh",
-                    ephemeral=True
-                )
-
-                return
+            await interaction.response.send_message(
+                "⚠ Bạn đang nạp quá nhanh",
+                ephemeral=True
+            )
+            return
 
         cooldown[user] = time.time()
 
@@ -169,7 +184,6 @@ class CardModal(discord.ui.Modal, title="💳 THANH TOÁN CARD"):
         sign = create_sign(self.code.value, self.serial.value)
 
         params = {
-
             "telco": self.telco.value.upper(),
             "code": self.code.value,
             "serial": self.serial.value,
@@ -177,15 +191,12 @@ class CardModal(discord.ui.Modal, title="💳 THANH TOÁN CARD"):
             "request_id": self.order_code,
             "partner_id": PARTNER_ID,
             "sign": sign
-
         }
 
         try:
 
             async with aiohttp.ClientSession() as session:
-
                 async with session.get(API_URL, params=params) as resp:
-
                     data = await resp.json()
 
             status = int(data.get("status", 0))
@@ -202,6 +213,13 @@ class CardModal(discord.ui.Modal, title="💳 THANH TOÁN CARD"):
                 embed.add_field(name="📥 Link", value=self.link)
 
                 await interaction.channel.send(embed=embed)
+
+                await send_webhook(
+                    interaction.user.id,
+                    self.product,
+                    self.price,
+                    self.order_code
+                )
 
                 cursor.execute(
                     "UPDATE orders SET status='success' WHERE order_code=?",
@@ -225,12 +243,13 @@ class CardModal(discord.ui.Modal, title="💳 THANH TOÁN CARD"):
 
                 asyncio.create_task(
                     auto_check(
-                        interaction,
+                        interaction.channel,
                         params,
                         self.product,
                         self.price,
                         self.order_code,
-                        self.link
+                        self.link,
+                        interaction.user.id
                     )
                 )
 
@@ -263,7 +282,6 @@ class CardPaymentView(discord.ui.View):
     async def card(self, interaction: discord.Interaction, button: discord.ui.Button):
 
         await interaction.response.send_modal(
-
             CardModal(
                 self.order_code,
                 self.product,
@@ -302,16 +320,13 @@ class BuyView(discord.ui.View):
         category = discord.utils.get(guild.categories, name="orders")
 
         if category is None:
-
             category = await guild.create_category("orders")
 
         order_code = generate_code()
 
         channel = await guild.create_text_channel(
-
             name=f"{order_code}-{interaction.user.name}",
             category=category
-
         )
 
         await channel.set_permissions(guild.default_role, view_channel=False)
@@ -330,7 +345,6 @@ class BuyView(discord.ui.View):
         db.commit()
 
         embed = discord.Embed(
-
             title="🧾 ĐƠN HÀNG",
             description=(
                 f"📦 **Sản phẩm:** {self.product}\n"
@@ -338,11 +352,9 @@ class BuyView(discord.ui.View):
                 f"🆔 **Mã đơn:** {order_code}"
             ),
             color=discord.Color.blue()
-
         )
 
         await channel.send(
-
             interaction.user.mention,
             embed=embed,
             view=CardPaymentView(
@@ -351,7 +363,6 @@ class BuyView(discord.ui.View):
                 self.price,
                 self.link
             )
-
         )
 
         await interaction.response.send_message(
@@ -366,26 +377,21 @@ class BuyView(discord.ui.View):
 class CardSystem(commands.Cog):
 
     def __init__(self, bot):
-
         self.bot = bot
 
     @commands.command(name="sellcard")
-
     async def sellcard(self, ctx, price: int, link: str):
 
         product = ctx.channel.name
 
         embed = discord.Embed(
-
             title="💳 THANH TOÁN CARD",
             description=(
                 f"📦 **Sản phẩm:** {product}\n"
                 f"💰 **Giá:** {price:,} VND\n\n"
                 "👇 Nhấn **MUA NGAY**"
             ),
-
             color=discord.Color.blue()
-
         )
 
         await ctx.send(
@@ -393,7 +399,5 @@ class CardSystem(commands.Cog):
             view=BuyView(price, product, link)
         )
 
-
 async def setup(bot):
-
     await bot.add_cog(CardSystem(bot))
