@@ -2,27 +2,144 @@ import discord
 from discord.ext import commands
 import random
 import string
-import asyncio
 import requests
 
 BANK = "MB"
 ACCOUNT = "0764495919"
 ACCOUNT_NAME = "NGUYENTHANHDAT"
 
-# API NAPTHE
 API_KEY = "0c8672410bf6ba8caeb009508b026ed9"
 
 ORDERS_CATEGORY_NAME = "orders"
 
 orders = {}
 
+
 def generate_code():
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
 
 
-# ==============================
-# VIEW MUA SẢN PHẨM
-# ==============================
+# ===================================
+# MODAL NẠP CARD
+# ===================================
+
+class CardModal(discord.ui.Modal, title="🎴 NẠP THẺ CÀO"):
+
+    telco = discord.ui.TextInput(
+        label="Loại thẻ",
+        placeholder="VIETTEL / MOBIFONE / VINAPHONE"
+    )
+
+    amount = discord.ui.TextInput(
+        label="Mệnh giá",
+        placeholder="100000"
+    )
+
+    serial = discord.ui.TextInput(
+        label="Số seri"
+    )
+
+    code = discord.ui.TextInput(
+        label="Mã thẻ"
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+
+        embed = discord.Embed(
+            title="⏳ ĐANG XỬ LÝ THẺ...",
+            color=discord.Color.yellow()
+        )
+
+        await interaction.response.send_message(embed=embed)
+
+        url = "https://napthe.vn/api/card"
+
+        data = {
+            "APIKey": API_KEY,
+            "Network": self.telco.value,
+            "CardValue": self.amount.value,
+            "CardSeri": self.serial.value,
+            "CardCode": self.code.value,
+            "RequestId": generate_code()
+        }
+
+        try:
+
+            res = requests.post(url, json=data).json()
+
+            if res["status"] == 1:
+
+                order = orders.get(interaction.channel.id)
+
+                embed = discord.Embed(
+                    title="✅ NẠP THẺ THÀNH CÔNG",
+                    description=f"📥 Link tải:\n{order['link']}",
+                    color=discord.Color.green()
+                )
+
+                await interaction.followup.send(embed=embed)
+
+            else:
+
+                embed = discord.Embed(
+                    title="❌ THẺ KHÔNG HỢP LỆ",
+                    description="Vui lòng kiểm tra lại thẻ.",
+                    color=discord.Color.red()
+                )
+
+                await interaction.followup.send(embed=embed)
+
+        except:
+
+            embed = discord.Embed(
+                title="❌ LỖI API",
+                description="Không thể kết nối máy chủ nạp thẻ.",
+                color=discord.Color.red()
+            )
+
+            await interaction.followup.send(embed=embed)
+
+
+# ===================================
+# VIEW CHỌN THANH TOÁN
+# ===================================
+
+class PaymentView(discord.ui.View):
+
+    def __init__(self, price, product_name, code):
+        super().__init__(timeout=None)
+        self.price = price
+        self.product_name = product_name
+        self.code = code
+
+    @discord.ui.button(label="💳 CHUYỂN KHOẢN", style=discord.ButtonStyle.primary)
+    async def bank(self, interaction: discord.Interaction, button: discord.ui.Button):
+
+        vietqr = f"https://img.vietqr.io/image/{BANK}-{ACCOUNT}-compact2.png?amount={self.price}&addInfo=DH_{self.code}&accountName={ACCOUNT_NAME}"
+
+        embed = discord.Embed(
+            title="💳 THANH TOÁN QR",
+            description=(
+                f"📦 **Sản phẩm:** {self.product_name}\n"
+                f"💰 **Số tiền:** {self.price} VND\n"
+                f"🆔 **Nội dung CK:** DH_{self.code}"
+            ),
+            color=discord.Color.green()
+        )
+
+        embed.set_image(url=vietqr)
+
+        await interaction.response.send_message(embed=embed)
+
+    @discord.ui.button(label="🎴 NẠP CARD", style=discord.ButtonStyle.secondary)
+    async def card(self, interaction: discord.Interaction, button: discord.ui.Button):
+
+        await interaction.response.send_modal(CardModal())
+
+
+# ===================================
+# VIEW MUA HÀNG
+# ===================================
 
 class BuyView(discord.ui.View):
 
@@ -86,165 +203,11 @@ class BuyView(discord.ui.View):
         )
 
 
-# ==============================
-# VIEW CHỌN THANH TOÁN
-# ==============================
-
-class PaymentView(discord.ui.View):
-
-    def __init__(self, price, product_name, code):
-        super().__init__(timeout=None)
-        self.price = price
-        self.product_name = product_name
-        self.code = code
-
-
-# ==============================
-# CHUYỂN KHOẢN
-# ==============================
-
-    @discord.ui.button(label="💳 CHUYỂN KHOẢN", style=discord.ButtonStyle.primary)
-    async def bank(self, interaction: discord.Interaction, button: discord.ui.Button):
-
-        vietqr = f"https://img.vietqr.io/image/{BANK}-{ACCOUNT}-compact2.png?amount={self.price}&addInfo=DH_{self.code}&accountName={ACCOUNT_NAME}"
-
-        embed = discord.Embed(
-            title="💳 THANH TOÁN QR",
-            description=(
-                f"📦 **Sản phẩm:** {self.product_name}\n"
-                f"💰 **Số tiền:** {self.price} VND\n"
-                f"🆔 **Nội dung CK:** DH_{self.code}"
-            ),
-            color=discord.Color.green()
-        )
-
-        embed.set_image(url=vietqr)
-
-        await interaction.response.send_message(embed=embed)
-
-
-# ==============================
-# NẠP CARD
-# ==============================
-
-    @discord.ui.button(label="🎴 NẠP CARD", style=discord.ButtonStyle.secondary)
-    async def card(self, interaction: discord.Interaction, button: discord.ui.Button):
-
-        embed = discord.Embed(
-            title="🎴 NẠP THẺ",
-            description=(
-                "Gửi thẻ theo mẫu:\n\n"
-                "```\n"
-                "Loaithe Menhgia Seri Mathe\n"
-                "```\n"
-                "Ví dụ:\n"
-                "```\n"
-                "VIETTEL 100000 123456789 987654321\n"
-                "```"
-            ),
-            color=discord.Color.orange()
-        )
-
-        await interaction.response.send_message(embed=embed)
-
-
-# ==============================
-# GỬI CARD LÊN API
-# ==============================
-
-async def send_card_api(network, value, seri, code):
-
-    url = "https://napthe.vn/api/card"
-
-    data = {
-        "APIKey": API_KEY,
-        "Network": network,
-        "CardValue": value,
-        "CardSeri": seri,
-        "CardCode": code,
-        "RequestId": generate_code()
-    }
-
-    try:
-
-        res = requests.post(url, json=data).json()
-
-        return res
-
-    except:
-        return None
-
-
-# ==============================
-# CHECK MESSAGE CARD
-# ==============================
+# ===================================
+# SETUP SELL
+# ===================================
 
 def setup_sell(bot):
-
-    @bot.event
-    async def on_message(message):
-
-        if message.author.bot:
-            return
-
-        if message.channel.id in orders:
-
-            args = message.content.split()
-
-            if len(args) == 4:
-
-                network = args[0]
-                value = args[1]
-                seri = args[2]
-                code = args[3]
-
-                embed = discord.Embed(
-                    title="⏳ ĐANG XỬ LÝ THẺ...",
-                    color=discord.Color.yellow()
-                )
-
-                msg = await message.channel.send(embed=embed)
-
-                result = await send_card_api(network, value, seri, code)
-
-                if result == None:
-
-                    embed = discord.Embed(
-                        title="❌ LỖI API",
-                        color=discord.Color.red()
-                    )
-
-                    await msg.edit(embed=embed)
-
-                else:
-
-                    if result["status"] == 1:
-
-                        order = orders[message.channel.id]
-
-                        embed = discord.Embed(
-                            title="✅ NẠP THẺ THÀNH CÔNG",
-                            description=f"📥 Link:\n{order['link']}",
-                            color=discord.Color.green()
-                        )
-
-                        await msg.edit(embed=embed)
-
-                    else:
-
-                        embed = discord.Embed(
-                            title="❌ THẺ KHÔNG HỢP LỆ",
-                            color=discord.Color.red()
-                        )
-
-                        await msg.edit(embed=embed)
-
-        await bot.process_commands(message)
-
-
-# ==============================
-# LỆNH BÁN
-# ==============================
 
     @bot.command()
     async def sell(ctx, price: int, link: str):
@@ -255,8 +218,8 @@ def setup_sell(bot):
             title="🛍️ MUA SẢN PHẨM",
             description=(
                 "Nhấn nút bên dưới để mua.\n\n"
-                "💳 Chuyển khoản\n"
-                "🎴 Nạp card"
+                "💳 Thanh toán QR\n"
+                "🎴 Nạp thẻ cào"
             ),
             color=discord.Color.green()
         )
@@ -265,11 +228,6 @@ def setup_sell(bot):
             embed=embed,
             view=BuyView(price, product_name, link)
         )
-
-
-# ==============================
-# ADMIN XÁC NHẬN BANK
-# ==============================
 
     @bot.command()
     @commands.has_permissions(administrator=True)
@@ -282,7 +240,7 @@ def setup_sell(bot):
 
         embed = discord.Embed(
             title="✅ THANH TOÁN THÀNH CÔNG",
-            description=f"📥 Link:\n{order['link']}",
+            description=f"📥 Link tải:\n{order['link']}",
             color=discord.Color.green()
         )
 
