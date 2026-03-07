@@ -177,6 +177,7 @@ class PaymentView(discord.ui.View):
                 f"🧾 **Mã đơn:** {self.code}\n\n"
                 f"📥 **Nội dung CK:** `{self.code}`\n"
                 f"#lưu ý: nội dung chuyển khoản không được chỉnh sửa!!!"
+                f"Và vui lòng chụp bill thanh toán rõ lên trên này nếu gặp lỗi thì admin sẽ giải quyết sớm!"
             ),
             color=discord.Color.green()
         )
@@ -393,3 +394,4 @@ class SellSystem(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(SellSystem(bot))
+
