@@ -6,7 +6,8 @@ import asyncio
 import aiohttp
 
 API_KEY = "API_KEY_DOITHES1"
-PARTNER_ID = "PARTNER_ID"
+PARTNER_ID = "0c8672410bf6ba8caeb009508b026ed9"
+
 
 def generate_code():
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
@@ -42,7 +43,7 @@ class CancelConfirm(discord.ui.View):
 
 class CardModal(discord.ui.Modal, title="THANH TOÁN CARD"):
 
-    telco = discord.ui.TextInput(label="Nhà mạng (Viettel/Mobi/Vina)")
+    telco = discord.ui.TextInput(label="Nhà mạng (VIETTEL / MOBI / VINA)")
     amount = discord.ui.TextInput(label="Mệnh giá")
     serial = discord.ui.TextInput(label="Serial")
     code = discord.ui.TextInput(label="Mã thẻ")
@@ -76,7 +77,7 @@ class CardModal(discord.ui.Modal, title="THANH TOÁN CARD"):
 
                 data = await resp.json()
 
-        if data["status"] == "success":
+        if data.get("status") == "success":
 
             embed = discord.Embed(
                 title="🎉 THANH TOÁN THÀNH CÔNG",
@@ -220,8 +221,8 @@ class CardSystem(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @commands.command()
-    async def sell(self, ctx, price: int, link: str):
+    @commands.command(name="sellcard")
+    async def sellcard(self, ctx, price: int, link: str):
 
         product = ctx.channel.name
 
@@ -230,7 +231,7 @@ class CardSystem(commands.Cog):
             description=(
                 f"📦 **Sản phẩm:** {product}\n"
                 f"💰 **Giá:** {price:,} VND\n\n"
-                "👇 Nhấn MUA NGAY"
+                "👇 Nhấn **MUA NGAY** để tạo đơn"
             ),
             color=discord.Color.blue()
         )
