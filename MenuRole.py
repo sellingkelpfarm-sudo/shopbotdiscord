@@ -3,8 +3,14 @@ from discord.ext import commands
 
 
 class ShopView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
 
-    @discord.ui.button(label="Vào Shop", style=discord.ButtonStyle.primary)
+    @discord.ui.button(
+        label="Vào Shop",
+        style=discord.ButtonStyle.primary,
+        custom_id="menu_shop"
+    )
     async def vao_shop(self, interaction: discord.Interaction, button: discord.ui.Button):
 
         role = interaction.guild.get_role(1479548161830686783)
@@ -17,7 +23,11 @@ class ShopView(discord.ui.View):
             ephemeral=True
         )
 
-    @discord.ui.button(label="Thuê Build", style=discord.ButtonStyle.danger)
+    @discord.ui.button(
+        label="Thuê Build",
+        style=discord.ButtonStyle.danger,
+        custom_id="menu_build"
+    )
     async def thue_build(self, interaction: discord.Interaction, button: discord.ui.Button):
 
         role = interaction.guild.get_role(1479707478873866261)
@@ -26,7 +36,7 @@ class ShopView(discord.ui.View):
             await interaction.user.add_roles(role)
 
         await interaction.response.send_message(
-            "Bạn đã vào khu Thuê Build!",
+            "Bạn đã vào khu Building!",
             ephemeral=True
         )
 
@@ -36,6 +46,8 @@ class MenuRole(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
+        # đăng ký persistent view
+        bot.add_view(ShopView())
 
     @commands.command()
     async def shop(self, ctx):
