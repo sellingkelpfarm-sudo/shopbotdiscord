@@ -66,7 +66,7 @@ class BuyView(discord.ui.View):
             color=discord.Color.orange()
         )
 
-        embed.set_footer(text="Shop Schematic • Hệ thống bán hàng tự động")
+        embed.set_footer(text="LoTuss's Schematics • Hệ thống bán hàng tự động")
 
         await channel.send(
             content=f"👤 {user.mention}",
@@ -199,4 +199,5 @@ def setup_sell(bot):
         embed.set_footer(text="Shop Schematic • Chúc bạn sử dụng vui vẻ!")
 
         await ctx.send(embed=embed)
+
 
