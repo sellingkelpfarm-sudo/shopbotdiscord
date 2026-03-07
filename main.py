@@ -1,5 +1,6 @@
 import discord
 from discord.ext import commands
+import os
 
 from MenuRole import setup_menu
 from sell_system import setup_sell
@@ -21,3 +22,4 @@ setup_menu(bot)
 setup_sell(bot)
 
 bot.run(os.getenv("TOKEN"))
+
