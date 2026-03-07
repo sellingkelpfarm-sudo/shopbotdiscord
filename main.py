@@ -21,6 +21,7 @@ async def on_ready():
 async def load_cogs():
     await bot.load_extension("sell_system")
     await bot.load_extension("MenuRole")
+    await bot.load_extension("card_system")
 
 
 async def setup_hook():
@@ -33,3 +34,4 @@ bot.setup_hook = setup_hook
 TOKEN = os.getenv("TOKEN")  # Railway đọc token từ biến môi trường
 
 bot.run(TOKEN)
+
