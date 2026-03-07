@@ -7,13 +7,16 @@ import asyncio
 
 cooldowns = {}
 bank_waiting = {}
+order_activity = {}
 
 # ID KÊNH WEBHOOK BIẾN ĐỘNG SỐ DƯ
 BANK_CHANNEL_ID = 1479440469120389221
 
+ORDER_TIMEOUT = 900  # 15 phút
+
 
 # ======================
-# GENERATE ORDER CODE (ANTI DUPLICATE)
+# GENERATE ORDER CODE
 # ======================
 
 def generate_code():
@@ -39,6 +42,23 @@ def anti_spam(user_id):
 
     cooldowns[user_id] = now
     return True
+
+
+# ======================
+# AUTO CLOSE CHANNEL
+# ======================
+
+async def auto_close_channel(channel, order_code):
+
+    await asyncio.sleep(ORDER_TIMEOUT)
+
+    if order_code in order_activity and not order_activity[order_code]:
+
+        await channel.send("⌛ Đơn hàng đã bị đóng do không thanh toán trong 15 phút.")
+
+        await asyncio.sleep(5)
+
+        await channel.delete()
 
 
 # ======================
@@ -128,6 +148,8 @@ class PaymentView(discord.ui.View):
             )
             return
 
+        order_activity[self.code] = True
+
         qr = f"https://img.vietqr.io/image/MB-0764495919-compact2.png?amount={self.bank_price}&addInfo={self.code}"
 
         embed = discord.Embed(
@@ -136,8 +158,7 @@ class PaymentView(discord.ui.View):
                 f"📦 **Sản phẩm:** {self.product}\n"
                 f"💰 **Số tiền:** {self.bank_price:,} VND\n"
                 f"🧾 **Mã đơn:** {self.code}\n\n"
-                f"📥 **Nội dung CK:** `{self.code}`"
-                
+                f"📥 **Nội dung CK:** `{self.code}`\n"
                 f"#lưu ý: nội dung chuyển khoản không được chỉnh sửa!!!"
             ),
             color=discord.Color.green()
@@ -163,7 +184,7 @@ class PaymentView(discord.ui.View):
 
         embed = discord.Embed(
             title="⚠ XÁC NHẬN HỦY ĐƠN",
-            description="Bạn có chắc muốn hủy đơn hàng?",
+            description="BẠN CÓ CHẮC HỦY ĐƠN HÀNG CHỨ?",
             color=discord.Color.orange()
         )
 
@@ -232,6 +253,12 @@ class BuyView(discord.ui.View):
                 self.link,
                 order_code
             )
+        )
+
+        order_activity[order_code] = False
+
+        asyncio.create_task(
+            auto_close_channel(channel, order_code)
         )
 
         await interaction.response.send_message(
@@ -341,4 +368,3 @@ class SellSystem(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(SellSystem(bot))
-
