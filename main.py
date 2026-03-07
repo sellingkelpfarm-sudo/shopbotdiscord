@@ -5,7 +5,7 @@ import os
 from MenuRole import setup_menu
 from sell_system import setup_sell
 
-token = "token"
+TOKEN = "TOKEN"
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -21,5 +21,6 @@ async def on_ready():
 setup_menu(bot)
 setup_sell(bot)
 
-bot.run(os.getenv("token"))
+bot.run(os.getenv("TOKEN"))
+
 
