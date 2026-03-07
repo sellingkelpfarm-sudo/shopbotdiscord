@@ -23,8 +23,19 @@ def setup_menu(bot):
     async def shop(ctx):
 
         embed = discord.Embed(
-            description="KÍNH CHÀO QUÝ KHÁCH ĐÃ ĐẾN VỚI LoTuss's Schematics Shop!\n"
-                        "Vui lòng chọn hạng mục ở bên dưới để tiếp tục sử dụng dịch vụ."
+            description"🏪 **CHÀO MỪNG ĐẾN VỚI LoTuss's SCHEMATICS SHOP**\n\n"
+                       "✨ Nơi cung cấp **Minecraft Farm Schematic** chất lượng cao\n"
+                       "⚡ Tối ưu cho **Survival • SMP • Skyblock**\n\n"
+                       "━━━━━━━━━━━━━━━━━━━━\n"
+                       "📦 **Dịch vụ tại Shop:**\n"
+                       "🌾 Farm tài nguyên tự động\n"
+                       "🧟 Mob / XP Farm\n"
+                       "⚡ Redstone & Automatic Farm\n"
+                       "🏗️ Thuê Builder build trực tiếp\n"
+                       "━━━━━━━━━━━━━━━━━━━━\n\n"
+                       "🛒 **Vào Shop** → Xem danh sách schematic\n"
+                       "🔨 **Thuê Build** → Thuê builder build farm\n\n"
         )
+
 
         await ctx.send(embed=embed, view=ShopView())
