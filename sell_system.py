@@ -147,14 +147,14 @@ class CardModal(discord.ui.Modal):
 
 class PaymentView(discord.ui.View):
 
-    def __init__(self, bank_price, card_price, product, link):
+    def __init__(self, bank_price, card_price, product, link, order_code):  # SỬA
         super().__init__(timeout=None)
 
         self.bank_price = bank_price
         self.card_price = card_price
         self.product = product
         self.link = link
-        self.code = generate_code()
+        self.code = order_code  # SỬA (không tạo code mới nữa)
 
     @discord.ui.button(label="💳 CHUYỂN KHOẢN", style=discord.ButtonStyle.green)
     async def bank(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -261,12 +261,14 @@ class BuyView(discord.ui.View):
             send_messages=True
         )
 
+        order_code = generate_code()  # SỬA (tạo mã 1 lần)
+
         embed = discord.Embed(
             title="🧾 TẠO ĐƠN HÀNG",
             description=(
                 f"📦 **Sản phẩm:** {self.product}\n"
                 f"💰 **Giá:** {self.bank_price:,} VND\n"
-                f"🆔 **Mã đơn:** {generate_code()}\n\n"
+                f"🆔 **Mã đơn:** {order_code}\n\n"
                 "👇 Chọn phương thức thanh toán"
             ),
             color=discord.Color.blue()
@@ -275,11 +277,12 @@ class BuyView(discord.ui.View):
         await channel.send(
             interaction.user.mention,
             embed=embed,
-            view=PaymentView(
+            view=PaymentView(  # SỬA
                 self.bank_price,
                 self.card_price,
                 self.product,
-                self.link
+                self.link,
+                order_code
             )
         )
 
@@ -358,7 +361,7 @@ class SellSystem(commands.Cog):
         bot.loop.create_task(card_worker(bot))
 
     @commands.command()
-    async def sell(self, ctx, bank_price: int, card_price: int, product: str, link: str):
+    async def sell(self, ctx, bank_price: int, card_price: int, product: str, *, link: str):  # SỬA
 
         embed = discord.Embed(
             title="🛒 SẢN PHẨM",
