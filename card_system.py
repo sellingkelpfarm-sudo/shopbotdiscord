@@ -37,6 +37,7 @@ amount INTEGER
 db.commit()
 
 cooldown = {}
+buy_cooldown = {}  # ANTI SPAM BUY
 COOLDOWN_TIME = 10
 
 # ======================
@@ -392,6 +393,20 @@ class BuyView(discord.ui.View):
 
     @discord.ui.button(label="🛒 MUA NGAY", style=discord.ButtonStyle.green)
     async def buy(self, interaction: discord.Interaction, button: discord.ui.Button):
+
+        user = interaction.user.id
+
+        # ANTI SPAM BUY
+        if user in buy_cooldown:
+            if time.time() - buy_cooldown[user] < COOLDOWN_TIME:
+
+                await interaction.response.send_message(
+                    "⏱ Bạn đang tạo đơn quá nhanh. Vui lòng đợi vài giây.",
+                    ephemeral=True
+                )
+                return
+
+        buy_cooldown[user] = time.time()
 
         guild = interaction.guild
 
