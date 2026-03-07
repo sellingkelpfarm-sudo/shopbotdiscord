@@ -1,6 +1,3 @@
-# Create the fixed Python file with only the minimal fixes requested
-
-code = r'''
 import discord
 from discord.ext import commands
 import random
@@ -90,9 +87,7 @@ async def auto_check(interaction, params, product, price, order_code):
             continue
 
         status = int(data.get("status", 0))
-
-        # FIX: doithe1s trả "amount" không phải "value"
-        real_amount = int(data.get("amount", 0))
+        real_amount = int(data.get("amount", 0))  # FIX
 
         if status == 1:
 
@@ -103,10 +98,10 @@ async def auto_check(interaction, params, product, price, order_code):
                 )
                 return
 
-            cursor.execute("SELECT telco,serial,code FROM orders WHERE order_code=?",(order_code,))
+            cursor.execute("SELECT telco,serial,code FROM orders WHERE order_code=?", (order_code,))
             card = cursor.fetchone()
 
-            telco,serial,code = card
+            telco, serial, code = card
 
             await send_webhook(
 f"""XÁC NHẬN THANH TOÁN THÀNH CÔNG
@@ -249,7 +244,7 @@ class CardModal(discord.ui.Modal, title="💳 NẠP THẺ CÀO"):
 UPDATE orders 
 SET telco=?,serial=?,code=?,link=? 
 WHERE order_code=?
-""",(self.telco,self.serial.value,self.code.value,self.link,self.order_code))
+""", (self.telco, self.serial.value, self.code.value, self.link, self.order_code))
 
         db.commit()
 
@@ -400,8 +395,7 @@ class BuyView(discord.ui.View):
     @discord.ui.button(label="🛒 MUA NGAY", style=discord.ButtonStyle.green)
     async def buy(self, interaction: discord.Interaction, button: discord.ui.Button):
 
-        # FIX: tránh lỗi Unknown interaction (quá 3 giây)
-        await interaction.response.defer(ephemeral=True)
+        await interaction.response.defer(ephemeral=True)  # FIX
 
         user = interaction.user.id
 
@@ -507,14 +501,14 @@ class CardSystem(commands.Cog):
 
         order_code = ctx.channel.name.split("-")[0]
 
-        cursor.execute("SELECT user_id,link,product,price FROM orders WHERE order_code=?",(order_code,))
+        cursor.execute("SELECT user_id,link,product,price FROM orders WHERE order_code=?", (order_code,))
         order = cursor.fetchone()
 
         if not order:
             await ctx.send("Không tìm thấy đơn.")
             return
 
-        user_id,link,product,price = order
+        user_id, link, product, price = order
 
         user = ctx.guild.get_member(user_id)
 
@@ -523,23 +517,16 @@ class CardSystem(commands.Cog):
             color=discord.Color.green()
         )
 
-        embed.add_field(name="📦 Sản phẩm",value=product)
-        embed.add_field(name="💰 Giá",value=f"{price:,} VND")
-        embed.add_field(name="🔗 Link nhận hàng",value=link)
+        embed.add_field(name="📦 Sản phẩm", value=product)
+        embed.add_field(name="💰 Giá", value=f"{price:,} VND")
+        embed.add_field(name="🔗 Link nhận hàng", value=link)
 
-        await ctx.send(user.mention,embed=embed)
+        await ctx.send(user.mention, embed=embed)
 
-        cursor.execute("UPDATE orders SET status='done' WHERE order_code=?",(order_code,))
+        cursor.execute("UPDATE orders SET status='done' WHERE order_code=?", (order_code,))
         db.commit()
 
 
 async def setup(bot):
     if not bot.get_cog("CardSystem"):
         await bot.add_cog(CardSystem(bot))
-'''
-
-path = "/mnt/data/card_system_fixed.py"
-with open(path, "w", encoding="utf-8") as f:
-    f.write(code)
-
-path
