@@ -12,12 +12,11 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 async def on_ready():
 print(f"Bot đã đăng nhập: {bot.user}")
 
+@bot.event
 async def setup_hook():
 await bot.load_extension("sell_system")
 await bot.load_extension("MenuRole")
 await bot.load_extension("card_system")
-
-bot.setup_hook = setup_hook
 
 TOKEN = os.getenv("TOKEN")
 bot.run(TOKEN)
