@@ -22,9 +22,11 @@ async def load_cogs():
     await bot.load_extension("sell_system")
 
 
-@bot.event
 async def setup_hook():
     await load_cogs()
+
+
+bot.setup_hook = setup_hook
 
 
 TOKEN = os.getenv("TOKEN")  # Railway sẽ đọc token từ biến môi trường
