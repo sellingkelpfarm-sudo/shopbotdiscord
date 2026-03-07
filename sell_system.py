@@ -246,7 +246,7 @@ class SellSystem(commands.Cog):
     # COMMAND SELLBANK
     # ======================
 
-    @commands.command()
+    @commands.command(name="sellbank")
     async def sellbank(self, ctx, bank_price: int, link: str):
 
         product = ctx.channel.name
