@@ -23,7 +23,7 @@ class BuyView(discord.ui.View):
         self.product_name = product_name
         self.download_link = download_link
 
-    @discord.ui.button(label="🛒 MUA NGAY", style=discord.ButtonStyle.success)
+    @discord.ui.button(label="🛒 MUA", style=discord.ButtonStyle.success)
     async def buy(self, interaction: discord.Interaction, button: discord.ui.Button):
 
         guild = interaction.guild
@@ -53,23 +53,21 @@ class BuyView(discord.ui.View):
             "link": self.download_link
         }
 
-        price_text = f"{self.price:,}".replace(",", ".") + " VND"
+        price_text = f"{self.price:,}".replace(",", ".") + "VND"
 
         embed = discord.Embed(
-            title="🧾 TẠO ĐƠN HÀNG THÀNH CÔNG",
+            title=f"🧾 XÁC NHẬN ĐƠN HÀNG {self.product_name}",
             description=(
-                f"📦 **Sản phẩm:** `{self.product_name}`\n"
-                f"💰 **Giá:** `{price_text}`\n"
-                f"🆔 **Mã giao dịch:** `{code}`\n\n"
-                "👉 Nhấn **XÁC NHẬN GIAO DỊCH** để lấy mã QR thanh toán."
+                f"📦 Tên đơn hàng: **{self.product_name}**\n"
+                f"💰 Số tiền: **{price_text}**\n"
+                f"🆔 Mã giao dịch: **{code}**\n\n"
+                "👉 Nhấn nút **XÁC NHẬN GIAO DỊCH** để lấy QR thanh toán."
             ),
             color=discord.Color.orange()
         )
 
-        embed.set_footer(text="LoTuss's Schematics • Hệ thống bán hàng tự động")
-
         await channel.send(
-            content=f"👤 {user.mention}",
+            content=user.mention,
             embed=embed,
             view=ConfirmView(self.price, self.product_name, code)
         )
@@ -113,9 +111,9 @@ class ConfirmView(discord.ui.View):
             seconds = time_left % 60
 
             embed.description = (
-                f"📦 **Sản phẩm:** `{self.product_name}`\n"
-                f"💰 **Giá:** `{price_text}`\n"
-                f"🆔 **Mã giao dịch:** `{code}`\n\n"
+                f"📦 **Tên đơn hàng:** {self.product_name}\n"
+                f"💰 **Số tiền:** {price_text}\n"
+                f"🆔 **Mã giao dịch:** {self.code}\n\n"
 
                 "⚠ **Lưu ý:**\n"
                 "• Không chỉnh sửa nội dung chuyển khoản\n"
@@ -154,14 +152,9 @@ def setup_sell(bot):
 
         embed = discord.Embed(
             title="🛍️ MUA SẢN PHẨM",
-            description=(
-                "Nhấn nút **🛒 MUA NGAY** bên dưới để tạo đơn hàng.\n\n"
-                "📌 Sau khi tạo đơn bạn sẽ nhận được **QR thanh toán**."
-            ),
+            description='Vui lòng chọn nút **"MUA"** ở dưới đây để bắt đầu mua.',
             color=discord.Color.green()
         )
-
-        embed.set_footer(text="Shop Schematic • Hệ thống bán hàng tự động")
 
         await ctx.send(
             embed=embed,
@@ -179,30 +172,21 @@ def setup_sell(bot):
 
         order = orders[ctx.channel.id]
 
-        price_text = f"{order['price']:,}".replace(",", ".") + " VND"
+        price_text = f"{order['price']:,}".replace(",", ".") + "VND"
 
         embed = discord.Embed(
-            title="✅ THANH TOÁN THÀNH CÔNG",
+            title="✅ XÁC NHẬN THANH TOÁN THÀNH CÔNG",
             description=(
-                f"📦 **Sản phẩm:** `{order['product']}`\n"
-                f"💰 **Số tiền:** `{price_text}`\n"
-                f"🆔 **Mã giao dịch:** `{order['code']}`\n\n"
+                f"📦 Tên đơn hàng: **{order['product']}**\n"
+                f"💰 Số tiền: **{price_text}**\n"
+                f"🆔 Mã giao dịch: **{order['code']}**\n\n"
 
                 f"📥 **Link tải:**\n{order['link']}\n\n"
 
                 "━━━━━━━━━━━━━━━━━━━━━━\n"
-                "💚 **CẢM ƠN BẠN ĐÃ ỦNG HỘ SHOP!**"
+                "💚 CẢM ƠN BẠN ĐÃ TIN TƯỞNG LỰA CHỌN SHOP SCHEMATICS CỦA CHÚNG TÔI!"
             ),
             color=discord.Color.green()
         )
 
-        embed.set_footer(text="LoTuss's Schematics • Chúc bạn sử dụng vui vẻ!")
-
         await ctx.send(embed=embed)
-
-
-
-
-
-
-
