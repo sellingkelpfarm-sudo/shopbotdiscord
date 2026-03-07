@@ -9,7 +9,7 @@ cooldowns = {}
 bank_waiting = {}
 
 # ID KÊNH WEBHOOK BIẾN ĐỘNG SỐ DƯ
-BANK_CHANNEL_ID = 123456789012345678  # <-- sửa thành ID kênh của bạn
+BANK_CHANNEL_ID = 1479440469120389221  # <-- sửa thành ID kênh của bạn
 
 
 # ======================
@@ -319,3 +319,4 @@ class SellSystem(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(SellSystem(bot))
+
