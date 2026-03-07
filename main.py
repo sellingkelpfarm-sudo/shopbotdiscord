@@ -2,45 +2,45 @@ import discord
 from discord.ext import commands
 import os
 
-# =========================
+# ========================
 
 # INTENTS
 
-# =========================
+# ========================
 
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
 
-# =========================
+# ========================
 
-# BOT CONFIG
+# BOT
 
-# =========================
+# ========================
 
 bot = commands.Bot(
 command_prefix="!",
 intents=intents
 )
 
-# =========================
+# ========================
 
 # READY EVENT
 
-# =========================
+# ========================
 
 @bot.event
 async def on_ready():
 print("=================================")
-print(f"🤖 Bot đã đăng nhập: {bot.user}")
-print("🚀 Bot đang hoạt động...")
+print(f"Bot đã đăng nhập: {bot.user}")
+print("Bot đang hoạt động...")
 print("=================================")
 
-# =========================
+# ========================
 
 # LOAD COGS
 
-# =========================
+# ========================
 
 async def load_cogs():
 cogs = [
@@ -53,30 +53,31 @@ cogs = [
 for cog in cogs:
     try:
         await bot.load_extension(cog)
-        print(f"✅ Loaded: {cog}")
+        print(f"Loaded: {cog}")
     except Exception as e:
-        print(f"❌ Lỗi load {cog}: {e}")
+        print(f"Lỗi load {cog}: {e}")
 ```
 
-# =========================
+# ========================
 
-# SETUP HOOK (discord.py 2.x)
+# SETUP HOOK
 
-# =========================
+# ========================
 
-@bot.event
 async def setup_hook():
 await load_cogs()
 
-# =========================
+bot.setup_hook = setup_hook
 
-# TOKEN (Railway ENV)
+# ========================
 
-# =========================
+# TOKEN
+
+# ========================
 
 TOKEN = os.getenv("TOKEN")
 
 if TOKEN is None:
-print("❌ Không tìm thấy TOKEN trong Railway Variables!")
+print("Không tìm thấy TOKEN trong Railway variables")
 else:
 bot.run(TOKEN)
