@@ -58,7 +58,6 @@ def create_sign(code, serial):
 
 
 async def send_webhook(msg):
-
     async with aiohttp.ClientSession() as session:
         await session.post(WEBHOOK_URL, json={"content": msg})
 
@@ -236,18 +235,34 @@ class CardModal(discord.ui.Modal, title="💳 NẠP THẺ CÀO"):
             "sign": sign
         }
 
-        async with aiohttp.ClientSession() as session:
+        try:
 
-            async with session.post(API_URL, data=params) as resp:
+            async with aiohttp.ClientSession() as session:
 
-                data = await resp.json()
+                async with session.post(API_URL, data=params) as resp:
+
+                    if resp.content_type != "application/json":
+
+                        await interaction.followup.send(
+                            "❌ API thẻ đang lỗi hoặc bảo trì. Vui lòng thử lại sau."
+                        )
+                        return
+
+                    data = await resp.json()
+
+        except:
+
+            await interaction.followup.send(
+                "❌ Không thể kết nối API nạp thẻ."
+            )
+            return
 
         status = int(data.get("status", 0))
 
         if status == 99:
 
             await interaction.followup.send(
-                "⏳ Thẻ đang chờ duyệt (tối đa 10 phút)"
+                "✅ Đã gửi thẻ thành công\n⏳ Đang chờ hệ thống xác nhận (tối đa 10 phút)"
             )
 
             asyncio.create_task(
