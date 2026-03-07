@@ -11,6 +11,8 @@ API_KEY = "0c8672410bf6ba8caeb009508b026ed9"
 cooldowns = {}
 card_queue = asyncio.Queue()
 
+orders = {}  # NEW: lưu đơn hàng bank
+
 
 def generate_code():
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
@@ -147,14 +149,14 @@ class CardModal(discord.ui.Modal):
 
 class PaymentView(discord.ui.View):
 
-    def __init__(self, bank_price, card_price, product, link, order_code):  # SỬA
+    def __init__(self, bank_price, card_price, product, link, order_code):
         super().__init__(timeout=None)
 
         self.bank_price = bank_price
         self.card_price = card_price
         self.product = product
         self.link = link
-        self.code = order_code  # SỬA (không tạo code mới nữa)
+        self.code = order_code
 
     @discord.ui.button(label="💳 CHUYỂN KHOẢN", style=discord.ButtonStyle.green)
     async def bank(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -248,8 +250,10 @@ class BuyView(discord.ui.View):
         if category is None:
             category = await guild.create_category("orders")
 
-        channel = await guild.create_text_channel(
-            name=f"order-{interaction.user.name}",
+        order_code = generate_code()
+
+        channel = await guild.create_text_channel(  # EDIT
+            name=f"{order_code}-{interaction.user.name}".lower(),
             category=category
         )
 
@@ -261,7 +265,10 @@ class BuyView(discord.ui.View):
             send_messages=True
         )
 
-        order_code = generate_code()  # SỬA (tạo mã 1 lần)
+        orders[order_code] = {  # NEW
+            "channel": channel,
+            "link": self.link
+        }
 
         embed = discord.Embed(
             title="🧾 TẠO ĐƠN HÀNG",
@@ -277,7 +284,7 @@ class BuyView(discord.ui.View):
         await channel.send(
             interaction.user.mention,
             embed=embed,
-            view=PaymentView(  # SỬA
+            view=PaymentView(
                 self.bank_price,
                 self.card_price,
                 self.product,
@@ -361,7 +368,9 @@ class SellSystem(commands.Cog):
         bot.loop.create_task(card_worker(bot))
 
     @commands.command()
-    async def sell(self, ctx, bank_price: int, card_price: int, product: str, *, link: str):  # SỬA
+    async def sell(self, ctx, bank_price: int, card_price: int, *, link: str):  # EDIT (không cần tên sản phẩm)
+
+        product = ctx.channel.name  # NEW: lấy tên bài viết forum
 
         embed = discord.Embed(
             title="🛒 SẢN PHẨM",
@@ -378,6 +387,26 @@ class SellSystem(commands.Cog):
             embed=embed,
             view=BuyView(bank_price, card_price, product, link)
         )
+
+    # NEW: xác nhận bank thủ công
+    @commands.command()
+    async def dabank(self, ctx, order_code: str):
+
+        order_code = order_code.upper()
+
+        if order_code not in orders:
+            await ctx.send("❌ Không tìm thấy đơn.")
+            return
+
+        data = orders[order_code]
+
+        embed = discord.Embed(
+            title="✅ THANH TOÁN THÀNH CÔNG",
+            description=f"📥 Link tải:\n{data['link']}",
+            color=discord.Color.green()
+        )
+
+        await data["channel"].send(embed=embed)
 
 
 async def setup(bot):
