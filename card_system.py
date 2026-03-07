@@ -148,7 +148,7 @@ class CancelConfirm(discord.ui.View):
 # CARD MODAL
 # ==============================
 
-class CardModal(discord.ui.Modal, title="💳 THANH TOÁN CARD [Lưu ý: giá tiền phải đúng với mức giá bán của hiện tại. Nạp sai mệnh giá sẽ không hoàn lại tiền!]"):
+class CardModal(discord.ui.Modal, title="💳 THANH TOÁN CARD | Lưu ý: giá tiền phải đúng với mức giá bán của hiện tại. Nạp sai mệnh giá sẽ không hoàn lại tiền!"):
 
     telco = discord.ui.TextInput(label="Nhà mạng (VIETTEL/MOBI/VINA)")
     serial = discord.ui.TextInput(label="Serial")
@@ -408,4 +408,5 @@ class CardSystem(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(CardSystem(bot))
+
 
