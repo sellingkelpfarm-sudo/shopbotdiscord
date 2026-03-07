@@ -17,7 +17,11 @@ PARTNER_KEY = "0c8672410bf6ba8caeb009508b026ed9"
 
 API_URL = "https://doithes1.vn/chargingws/v2"
 
-WEBHOOK_URL = "https://discord.com/api/webhooks/1479880863243047202/uShjrO4fWTWzCpz2X30-oivNP6XqD224HhpqjBB6oiqUEcE6icMcHR8k728R-1Pv5mlg"
+# ==============================
+# WEBHOOK LOG
+# ==============================
+
+WEBHOOK_URL = "YOUR_WEBHOOK_URL"
 
 # ==============================
 # DATABASE
@@ -58,66 +62,36 @@ COOLDOWN_TIME = 10
 def generate_code():
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
 
-
 def create_sign(code, serial):
     raw = f"{PARTNER_KEY}{code}{serial}"
     return hashlib.md5(raw.encode()).hexdigest()
 
-
-async def send_webhook(user, product, price, order_code):
-
-    data = {
-        "embeds": [
-            {
-                "title": "💰 CARD NẠP THÀNH CÔNG",
-                "color": 3066993,
-                "fields": [
-                    {"name": "👤 User", "value": f"<@{user}>"},
-                    {"name": "📦 Sản phẩm", "value": product},
-                    {"name": "💵 Số tiền", "value": f"{price:,} VND"},
-                    {"name": "🆔 Mã đơn", "value": order_code}
-                ]
-            }
-        ]
-    }
+async def send_webhook(msg):
 
     async with aiohttp.ClientSession() as session:
-        await session.post(WEBHOOK_URL, json=data)
 
-
-# ==============================
-# CANCEL VIEW
-# ==============================
-
-class CancelConfirm(discord.ui.View):
-
-    @discord.ui.button(label="✅ HUỶ ĐƠN", style=discord.ButtonStyle.red)
-    async def yes(self, interaction: discord.Interaction, button: discord.ui.Button):
-
-        await interaction.response.send_message("⏳ Đang huỷ đơn...")
-        await asyncio.sleep(5)
-        await interaction.channel.delete()
-
-    @discord.ui.button(label="❌ GIỮ ĐƠN", style=discord.ButtonStyle.green)
-    async def no(self, interaction: discord.Interaction, button: discord.ui.Button):
-
-        await interaction.response.send_message("👍 Đơn vẫn được giữ", ephemeral=True)
+        await session.post(
+            WEBHOOK_URL,
+            json={"content": msg}
+        )
 
 # ==============================
 # AUTO CHECK CARD
 # ==============================
 
-async def auto_check(channel, params, product, price, order_code, link, user):
+async def auto_check(interaction, params, product, price, order_code, link):
 
     await asyncio.sleep(10)
 
     async with aiohttp.ClientSession() as session:
+
         async with session.get(API_URL, params=params) as resp:
             data = await resp.json()
 
     status = int(data.get("status", 0))
+    real_amount = int(data.get("value", 0))
 
-    if status == 1:
+    if status == 1 and real_amount == price:
 
         embed = discord.Embed(
             title="🎉 THANH TOÁN THÀNH CÔNG",
@@ -129,9 +103,7 @@ async def auto_check(channel, params, product, price, order_code, link, user):
         embed.add_field(name="🆔 Mã đơn", value=order_code)
         embed.add_field(name="📥 Link", value=link)
 
-        await channel.send(embed=embed)
-
-        await send_webhook(user, product, price, order_code)
+        await interaction.channel.send(embed=embed)
 
         cursor.execute(
             "UPDATE orders SET status='success' WHERE order_code=?",
@@ -145,6 +117,33 @@ async def auto_check(channel, params, product, price, order_code, link, user):
 
         db.commit()
 
+        await send_webhook(
+            f"💰 Giao dịch thành công\nUser: {interaction.user}\nĐơn: {order_code}\nTiền: {price}"
+        )
+
+# ==============================
+# CANCEL VIEW
+# ==============================
+
+class CancelConfirm(discord.ui.View):
+
+    @discord.ui.button(label="✅ HUỶ ĐƠN", style=discord.ButtonStyle.red)
+    async def yes(self, interaction: discord.Interaction, button: discord.ui.Button):
+
+        await interaction.response.send_message("⏳ Đang huỷ đơn...")
+
+        await asyncio.sleep(5)
+
+        await interaction.channel.delete()
+
+    @discord.ui.button(label="❌ GIỮ ĐƠN", style=discord.ButtonStyle.green)
+    async def no(self, interaction: discord.Interaction, button: discord.ui.Button):
+
+        await interaction.response.send_message(
+            "👍 Đơn vẫn được giữ",
+            ephemeral=True
+        )
+
 # ==============================
 # CARD MODAL
 # ==============================
@@ -152,7 +151,6 @@ async def auto_check(channel, params, product, price, order_code, link, user):
 class CardModal(discord.ui.Modal, title="💳 THANH TOÁN CARD"):
 
     telco = discord.ui.TextInput(label="Nhà mạng (VIETTEL/MOBI/VINA)")
-    amount = discord.ui.TextInput(label="Mệnh giá")
     serial = discord.ui.TextInput(label="Serial")
     code = discord.ui.TextInput(label="Mã thẻ")
 
@@ -169,13 +167,15 @@ class CardModal(discord.ui.Modal, title="💳 THANH TOÁN CARD"):
 
         user = interaction.user.id
 
-        if user in cooldown and time.time() - cooldown[user] < COOLDOWN_TIME:
+        if user in cooldown:
 
-            await interaction.response.send_message(
-                "⚠ Bạn đang nạp quá nhanh",
-                ephemeral=True
-            )
-            return
+            if time.time() - cooldown[user] < COOLDOWN_TIME:
+
+                await interaction.response.send_message(
+                    "⚠ Bạn đang nạp quá nhanh",
+                    ephemeral=True
+                )
+                return
 
         cooldown[user] = time.time()
 
@@ -184,24 +184,35 @@ class CardModal(discord.ui.Modal, title="💳 THANH TOÁN CARD"):
         sign = create_sign(self.code.value, self.serial.value)
 
         params = {
+
             "telco": self.telco.value.upper(),
             "code": self.code.value,
             "serial": self.serial.value,
-            "amount": self.amount.value,
+            "amount": self.price,
             "request_id": self.order_code,
             "partner_id": PARTNER_ID,
             "sign": sign
+
         }
 
         try:
 
             async with aiohttp.ClientSession() as session:
+
                 async with session.get(API_URL, params=params) as resp:
                     data = await resp.json()
 
             status = int(data.get("status", 0))
+            real_amount = int(data.get("value", 0))
 
             if status == 1:
+
+                if real_amount != self.price:
+
+                    await interaction.followup.send(
+                        f"❌ Thẻ {real_amount:,} VND không khớp với đơn {self.price:,} VND"
+                    )
+                    return
 
                 embed = discord.Embed(
                     title="🎉 THANH TOÁN THÀNH CÔNG",
@@ -213,13 +224,6 @@ class CardModal(discord.ui.Modal, title="💳 THANH TOÁN CARD"):
                 embed.add_field(name="📥 Link", value=self.link)
 
                 await interaction.channel.send(embed=embed)
-
-                await send_webhook(
-                    interaction.user.id,
-                    self.product,
-                    self.price,
-                    self.order_code
-                )
 
                 cursor.execute(
                     "UPDATE orders SET status='success' WHERE order_code=?",
@@ -233,23 +237,26 @@ class CardModal(discord.ui.Modal, title="💳 THANH TOÁN CARD"):
 
                 db.commit()
 
+                await send_webhook(
+                    f"💰 Giao dịch thành công\nUser: {interaction.user}\nĐơn: {self.order_code}\nTiền: {self.price}"
+                )
+
                 await interaction.followup.send("✅ Thẻ hợp lệ")
 
             elif status == 99:
 
                 await interaction.followup.send(
-                    "⏳ Thẻ đang xử lý... hệ thống sẽ tự kiểm tra lại"
+                    "⏳ Thẻ đang xử lý... hệ thống sẽ kiểm tra lại"
                 )
 
                 asyncio.create_task(
                     auto_check(
-                        interaction.channel,
+                        interaction,
                         params,
                         self.product,
                         self.price,
                         self.order_code,
-                        self.link,
-                        interaction.user.id
+                        self.link
                     )
                 )
 
