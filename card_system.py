@@ -409,5 +409,10 @@ class CardSystem(commands.Cog):
         )
 
 
+# ======================
+# FIX LOAD COG DUPLICATE
+# ======================
+
 async def setup(bot):
-    await bot.add_cog(CardSystem(bot))
+    if not bot.get_cog("CardSystem"):
+        await bot.add_cog(CardSystem(bot))
