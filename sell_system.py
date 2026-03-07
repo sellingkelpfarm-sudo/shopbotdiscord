@@ -98,54 +98,6 @@ async def bank_countdown(message, order_code):
 
 
 # ======================
-# AUTO BANK CHECK
-# ======================
-
-async def bank_auto_check(bot):
-
-    while True:
-
-        try:
-
-            url = "https://my.sepay.vn/userapi/transactions/list"
-
-            headers = {
-                "Authorization": "Bearer YOUR_SEPAY_API"
-            }
-
-            res = requests.get(url, headers=headers).json()
-
-            if "transactions" in res:
-
-                for tx in res["transactions"]:
-
-                    content = tx.get("transaction_content", "")
-
-                    for order in list(bank_waiting):
-
-                        if order in content:
-
-                            data = bank_waiting[order]
-
-                            channel = bot.get_channel(data["channel"])
-
-                            embed = discord.Embed(
-                                title="✅ THANH TOÁN THÀNH CÔNG",
-                                description=f"📥 Link tải:\n{data['link']}",
-                                color=discord.Color.green()
-                            )
-
-                            await channel.send(embed=embed)
-
-                            del bank_waiting[order]
-
-        except:
-            pass
-
-        await asyncio.sleep(15)
-
-
-# ======================
 # CARD MODAL
 # ======================
 
@@ -249,7 +201,9 @@ class PaymentView(discord.ui.View):
 
         bank_waiting[self.code] = {
             "channel": interaction.channel.id,
-            "link": self.link
+            "link": self.link,
+            "product": self.product,
+            "price": self.bank_price
         }
 
         asyncio.create_task(bank_countdown(msg, self.code))
@@ -387,13 +341,7 @@ async def card_worker(bot):
 
                 embed = discord.Embed(
                     title="✅ THANH TOÁN THÀNH CÔNG",
-                    description=(
-                        f"📦 **Sản phẩm:** {self.product}\n"
-                        f"💰 **Số tiền:** {self.bank_price:,} VND\n"
-                        f"🧾 **Mã đơn:** {self.code}\n\n"
-                        
-                        f"📥 Link tải:\n{data['link']}"
-                    ),
+                    description=f"📥 Link tải:\n{data['link']}",
                     color=discord.Color.green()
                 )
 
@@ -431,7 +379,6 @@ class SellSystem(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         bot.loop.create_task(card_worker(bot))
-        bot.loop.create_task(bank_auto_check(bot))
 
     @commands.command()
     async def sell(self, ctx, bank_price: int, card_price: int, link: str):
@@ -463,19 +410,45 @@ class SellSystem(commands.Cog):
 
         if code in bank_waiting:
 
-            link = bank_waiting[code]["link"]
+            data = bank_waiting[code]
 
             embed = discord.Embed(
-                title="✅XÁC NHẬN THANH TOÁN THÀNH CÔNG!",
-                description=(
-                    f"📦 **Sản phẩm:** {self.product}\n"
-                    f"💰 **Số tiền:** {self.bank_price:,} VND\n"
-                    f"🧾 **Mã đơn:** {self.code}\n\n"
-                        
-                    f"📥 Link tải:\n{data['link']}"
-                ),
+                title="💳 XÁC NHẬN THANH TOÁN THÀNH CÔNG",
+                description="Giao dịch chuyển khoản đã được xác nhận.",
                 color=discord.Color.green()
             )
+
+            embed.add_field(
+                name="📦 Tên đơn hàng",
+                value=data["product"],
+                inline=False
+            )
+
+            embed.add_field(
+                name="💰 Số tiền thanh toán",
+                value=f"{data['price']:,} VND",
+                inline=True
+            )
+
+            embed.add_field(
+                name="🧾 Mã đơn",
+                value=code,
+                inline=True
+            )
+
+            embed.add_field(
+                name="🏦 Nội dung chuyển khoản",
+                value=f"`{code}`",
+                inline=False
+            )
+
+            embed.add_field(
+                name="📥 Link tải sản phẩm",
+                value=data["link"],
+                inline=False
+            )
+
+            embed.set_footer(text="Cảm ơn bạn đã mua hàng ❤️")
 
             await ctx.send(embed=embed)
 
@@ -484,5 +457,3 @@ class SellSystem(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(SellSystem(bot))
-
-
