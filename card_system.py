@@ -263,17 +263,13 @@ class TelcoSelect(discord.ui.Select):
 
         options = [
 
-            discord.SelectOption(label="Garena (GIÁ TỐT)", value="GARENA"),
+            discord.SelectOption(label="Garena", value="GARENA"),
             discord.SelectOption(label="Viettel", value="VIETTEL"),
             discord.SelectOption(label="Vinaphone", value="VINA"),
             discord.SelectOption(label="Mobifone", value="MOBI"),
             discord.SelectOption(label="Vcoin", value="VCOIN"),
             discord.SelectOption(label="Scoin", value="SCOIN"),
             discord.SelectOption(label="Zing", value="ZING"),
-            discord.SelectOption(label="Garena (Duyệt chậm 3h⏱)", value="GARENA"),
-            discord.SelectOption(label="Zing (Chậm 24h⏱)", value="ZING"),
-            discord.SelectOption(label="Vinaphone (Rất chậm⏱)", value="VINA"),
-
         ]
 
         super().__init__(placeholder="📡 Chọn loại thẻ", options=options)
@@ -459,3 +455,4 @@ class CardSystem(commands.Cog):
 async def setup(bot):
     if not bot.get_cog("CardSystem"):
         await bot.add_cog(CardSystem(bot))
+
