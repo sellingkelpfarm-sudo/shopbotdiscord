@@ -20,4 +20,4 @@ async def on_ready():
 setup_menu(bot)
 setup_sell(bot)
 
-bot.run("TOKEN")
+bot.run(os.getenv("TOKEN"))
