@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands
 import random
 import string
+import asyncio
 
 BANK = "MB"
 ACCOUNT = "0764495919"
@@ -22,7 +23,7 @@ class BuyView(discord.ui.View):
         self.product_name = product_name
         self.download_link = download_link
 
-    @discord.ui.button(label="MUA", style=discord.ButtonStyle.success)
+    @discord.ui.button(label="🛒 MUA NGAY", style=discord.ButtonStyle.success)
     async def buy(self, interaction: discord.Interaction, button: discord.ui.Button):
 
         guild = interaction.guild
@@ -52,20 +53,23 @@ class BuyView(discord.ui.View):
             "link": self.download_link
         }
 
-        price_text = f"{self.price:,}".replace(",", ".") + "VND"
+        price_text = f"{self.price:,}".replace(",", ".") + " VND"
 
         embed = discord.Embed(
-            title=f"XÁC NHẬN THANH TOÁN ĐƠN HÀNG {self.product_name}",
+            title="🧾 TẠO ĐƠN HÀNG THÀNH CÔNG",
             description=(
-                f"Tên đơn hàng: {self.product_name}\n"
-                f"Số Tiền: {price_text}\n"
-                f"Mã Giao Dịch: {code}"
+                f"📦 **Sản phẩm:** `{self.product_name}`\n"
+                f"💰 **Giá:** `{price_text}`\n"
+                f"🆔 **Mã giao dịch:** `{code}`\n\n"
+                "👉 Nhấn **XÁC NHẬN GIAO DỊCH** để lấy mã QR thanh toán."
             ),
             color=discord.Color.orange()
         )
 
+        embed.set_footer(text="Shop Schematic • Hệ thống bán hàng tự động")
+
         await channel.send(
-            content=user.mention,
+            content=f"👤 {user.mention}",
             embed=embed,
             view=ConfirmView(self.price, self.product_name, code)
         )
@@ -83,43 +87,54 @@ class ConfirmView(discord.ui.View):
         self.product_name = product_name
         self.code = code
 
-    @discord.ui.button(label="XÁC NHẬN GIAO DỊCH", style=discord.ButtonStyle.primary)
+    @discord.ui.button(label="💳 XÁC NHẬN GIAO DỊCH", style=discord.ButtonStyle.primary)
     async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
 
         vietqr = f"https://img.vietqr.io/image/{BANK}-{ACCOUNT}-compact2.png?amount={self.price}&addInfo=MaDonHang_{self.code}&accountName={ACCOUNT_NAME}"
 
-        price_text = f"{self.price:,}".replace(",", ".") + "VND"
+        price_text = f"{self.price:,}".replace(",", ".") + " VND"
 
         embed = discord.Embed(
-            title="VUI LÒNG QUÉT MÃ QR Ở DƯỚI ĐÂY ĐỂ THANH TOÁN",
+            title="💳 THANH TOÁN ĐƠN HÀNG",
             description=(
-                f"Tên đơn hàng: {self.product_name}\n"
-                f"Số Tiền: {price_text}\n"
-                f"Mã Giao Dịch: {self.code}\n\n"
-                f"#Lưu ý: Không chỉnh sửa nội dung chuyển khoản!!!\n\n"
-                f"#*sau khi thực hiện quét mã thành công thì admin sẽ check và xác nhận giao dịch thủ công bạn nhé! ^w^*\n\n"
-                f"⏳ Thời gian thanh toán: **5 phút**"
+                f"📦 **Sản phẩm:** `{self.product_name}`\n"
+                f"💰 **Số tiền:** `{price_text}`\n"
+                f"🆔 **Mã giao dịch:** `{self.code}`\n\n"
+
+                "⚠ **Lưu ý quan trọng**\n"
+                "• Không chỉnh sửa nội dung chuyển khoản\n"
+                "• Thanh toán đúng số tiền\n\n"
+
+                "⏳ **Thời gian thanh toán: 5 phút**\n"
+                "_Sau khi thanh toán admin sẽ kiểm tra và xác nhận._"
             ),
             color=discord.Color.green()
         )
 
         embed.set_image(url=vietqr)
 
+        embed.set_footer(text="Quét QR bằng app ngân hàng để thanh toán")
+
         await interaction.response.send_message(embed=embed)
 
-        # Lấy message vừa gửi
         qr_message = await interaction.original_response()
 
-        # Đợi 5 phút
         await asyncio.sleep(300)
 
         try:
             await qr_message.delete()
-            await interaction.channel.send(
-                "⚠ **ĐÃ QUÁ GIỜ THỰC HIỆN GIAO DỊCH. VUI LÒNG THỬ LẠI.**"
+
+            timeout_embed = discord.Embed(
+                title="⏰ ĐƠN HÀNG HẾT HẠN",
+                description="⚠ **ĐÃ QUÁ GIỜ THỰC HIỆN GIAO DỊCH**\n\nVui lòng tạo lại đơn hàng mới.",
+                color=discord.Color.red()
             )
+
+            await interaction.channel.send(embed=timeout_embed)
+
         except:
             pass
+
 
 def setup_sell(bot):
 
@@ -129,9 +144,15 @@ def setup_sell(bot):
         product_name = ctx.channel.name
 
         embed = discord.Embed(
-            description='Vui lòng chọn nút **"MUA"** ở dưới đây để bắt đầu mua.',
+            title="🛍️ MUA SẢN PHẨM",
+            description=(
+                "Nhấn nút **🛒 MUA NGAY** bên dưới để tạo đơn hàng.\n\n"
+                "📌 Sau khi tạo đơn bạn sẽ nhận được **QR thanh toán**."
+            ),
             color=discord.Color.green()
         )
+
+        embed.set_footer(text="Shop Schematic • Hệ thống bán hàng tự động")
 
         await ctx.send(
             embed=embed,
@@ -149,21 +170,23 @@ def setup_sell(bot):
 
         order = orders[ctx.channel.id]
 
-        price_text = f"{order['price']:,}".replace(",", ".") + "VND"
+        price_text = f"{order['price']:,}".replace(",", ".") + " VND"
 
         embed = discord.Embed(
-            title="XÁC NHẬN THANH TOÁN THÀNH CÔNG",
+            title="✅ THANH TOÁN THÀNH CÔNG",
             description=(
-                f"Tên đơn hàng: {order['product']}\n"
-                f"Số Tiền: {price_text}\n"
-                f"Mã Giao Dịch: {order['code']}\n\n"
+                f"📦 **Sản phẩm:** `{order['product']}`\n"
+                f"💰 **Số tiền:** `{price_text}`\n"
+                f"🆔 **Mã giao dịch:** `{order['code']}`\n\n"
 
-                f"Link tải: {order['link']}\n"
+                f"📥 **Link tải:**\n{order['link']}\n\n"
 
-                "_+_+_+_+_+_+_+_+_+_+_+_+_+_+_+_+_+_+_+_+_+_+_\n"
-                "CẢM ƠN BẠN ĐÃ TIN TƯỞNG LỰA CHỌN SHOP SCHEMATICS CỦA CHÚNG TÔI!"
+                "━━━━━━━━━━━━━━━━━━━━━━\n"
+                "💚 **CẢM ƠN BẠN ĐÃ ỦNG HỘ SHOP!**"
             ),
             color=discord.Color.green()
         )
+
+        embed.set_footer(text="Shop Schematic • Chúc bạn sử dụng vui vẻ!")
 
         await ctx.send(embed=embed)
