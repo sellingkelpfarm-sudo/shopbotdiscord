@@ -1,3 +1,6 @@
+# Create the fixed Python file with only the minimal fixes requested
+
+code = r'''
 import discord
 from discord.ext import commands
 import random
@@ -87,7 +90,9 @@ async def auto_check(interaction, params, product, price, order_code):
             continue
 
         status = int(data.get("status", 0))
-        real_amount = int(data.get("value", 0))
+
+        # FIX: doithe1s trả "amount" không phải "value"
+        real_amount = int(data.get("amount", 0))
 
         if status == 1:
 
@@ -395,12 +400,15 @@ class BuyView(discord.ui.View):
     @discord.ui.button(label="🛒 MUA NGAY", style=discord.ButtonStyle.green)
     async def buy(self, interaction: discord.Interaction, button: discord.ui.Button):
 
+        # FIX: tránh lỗi Unknown interaction (quá 3 giây)
+        await interaction.response.defer(ephemeral=True)
+
         user = interaction.user.id
 
         if user in buy_cooldown:
             if time.time() - buy_cooldown[user] < COOLDOWN_TIME:
 
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     "⏱ Bạn đang tạo đơn quá nhanh. Vui lòng đợi vài giây.",
                     ephemeral=True
                 )
@@ -463,7 +471,7 @@ class BuyView(discord.ui.View):
             auto_close_channel(channel, order_code)
         )
 
-        await interaction.response.send_message(
+        await interaction.followup.send(
             f"✅ Đơn của bạn: {channel.mention}",
             ephemeral=True
         )
@@ -528,3 +536,10 @@ class CardSystem(commands.Cog):
 async def setup(bot):
     if not bot.get_cog("CardSystem"):
         await bot.add_cog(CardSystem(bot))
+'''
+
+path = "/mnt/data/card_system_fixed.py"
+with open(path, "w", encoding="utf-8") as f:
+    f.write(code)
+
+path
