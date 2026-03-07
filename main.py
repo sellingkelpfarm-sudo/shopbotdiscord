@@ -5,7 +5,7 @@ import random
 import string
 import time
 
-API_KEY = "YOUR_API_KEY"
+API_KEY = "0c8672410bf6ba8caeb009508b026ed9"
 
 cooldowns = {}
 
@@ -200,3 +200,4 @@ class SellSystem(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(SellSystem(bot))
+
