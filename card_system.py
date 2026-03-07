@@ -37,20 +37,12 @@ amount INTEGER
 db.commit()
 
 cooldown = {}
-buy_cooldown = {}  # ANTI SPAM BUY
+buy_cooldown = {}
 COOLDOWN_TIME = 10
 
-# ======================
-# THEO DÕI HOẠT ĐỘNG ĐƠN
-# ======================
-
 order_activity = {}
-ORDER_TIMEOUT = 900  # 15 phút
+ORDER_TIMEOUT = 900
 
-
-# ======================
-# GENERATE ORDER CODE
-# ======================
 
 def generate_code():
     while True:
@@ -60,28 +52,16 @@ def generate_code():
             return code
 
 
-# ======================
-# SIGN
-# ======================
-
 def create_sign(code, serial):
     raw = f"{PARTNER_KEY}{code}{serial}"
     return hashlib.md5(raw.encode()).hexdigest()
 
-
-# ======================
-# WEBHOOK
-# ======================
 
 async def send_webhook(msg):
 
     async with aiohttp.ClientSession() as session:
         await session.post(WEBHOOK_URL, json={"content": msg})
 
-
-# ======================
-# AUTO CHECK
-# ======================
 
 async def auto_check(interaction, params, product, price, order_code, link):
 
@@ -158,10 +138,6 @@ async def auto_check(interaction, params, product, price, order_code, link):
     )
 
 
-# ======================
-# AUTO ĐÓNG KÊNH SAU 15 PHÚT
-# ======================
-
 async def auto_close_channel(channel, order_code):
 
     await asyncio.sleep(ORDER_TIMEOUT)
@@ -174,10 +150,6 @@ async def auto_close_channel(channel, order_code):
 
         await channel.delete()
 
-
-# ======================
-# VIEW XÁC NHẬN HỦY
-# ======================
 
 class CancelConfirmView(discord.ui.View):
 
@@ -201,10 +173,6 @@ class CancelConfirmView(discord.ui.View):
             ephemeral=True
         )
 
-
-# ======================
-# MODAL NHẬP THẺ
-# ======================
 
 class CardModal(discord.ui.Modal, title="💳 NẠP THẺ CÀO"):
 
@@ -289,20 +257,23 @@ class CardModal(discord.ui.Modal, title="💳 NẠP THẺ CÀO"):
             )
 
 
-# ======================
-# CHỌN NHÀ MẠNG
-# ======================
-
 class TelcoSelect(discord.ui.Select):
 
     def __init__(self, order_code, product, price, link):
 
         options = [
 
+            discord.SelectOption(label="Garena (GIÁ TỐT)", value="GARENA"),
             discord.SelectOption(label="Viettel", value="VIETTEL"),
             discord.SelectOption(label="Vinaphone", value="VINA"),
             discord.SelectOption(label="Mobifone", value="MOBI"),
-            discord.SelectOption(label="Garena", value="GARENA"),
+            discord.SelectOption(label="Vcoin", value="VCOIN"),
+            discord.SelectOption(label="Scoin", value="SCOIN"),
+            discord.SelectOption(label="Zing", value="ZING"),
+            discord.SelectOption(label="Garena (Duyệt chậm 3h⏱)", value="GARENA"),
+            discord.SelectOption(label="Zing (Chậm 24h⏱)", value="ZING"),
+            discord.SelectOption(label="Vinaphone (Rất chậm⏱)", value="VINA"),
+
         ]
 
         super().__init__(placeholder="📡 Chọn loại thẻ", options=options)
@@ -335,10 +306,6 @@ class TelcoView(discord.ui.View):
             TelcoSelect(order_code, product, price, link)
         )
 
-
-# ======================
-# VIEW THANH TOÁN
-# ======================
 
 class CardPaymentView(discord.ui.View):
 
@@ -377,10 +344,6 @@ class CardPaymentView(discord.ui.View):
         )
 
 
-# ======================
-# VIEW MUA
-# ======================
-
 class BuyView(discord.ui.View):
 
     def __init__(self, price, product, link):
@@ -396,7 +359,6 @@ class BuyView(discord.ui.View):
 
         user = interaction.user.id
 
-        # ANTI SPAM BUY
         if user in buy_cooldown:
             if time.time() - buy_cooldown[user] < COOLDOWN_TIME:
 
