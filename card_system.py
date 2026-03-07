@@ -16,7 +16,9 @@ PARTNER_ID = "45016810383"
 PARTNER_KEY = "0c8672410bf6ba8caeb009508b026ed9"
 API_URL = "https://doithe1s.vn/chargingws/v2"
 
-WEBHOOK_URL = "https://discord.com/api/webhooks/1479880863243047202/uShjrO4fWTWzCpz2X30-oivNP6XqD224HhpqjBB6oiqUEcE6icMcHR8k728R-1Pv5mlg"
+WEBHOOK_URL = "YOUR_WEBHOOK"
+
+VALID_AMOUNTS = [10000,20000,50000,100000,200000,500000]
 
 # ==============================
 # DATABASE
@@ -57,11 +59,17 @@ COOLDOWN_TIME = 10
 def generate_code():
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
 
+
 def create_sign(code, serial):
     raw = f"{PARTNER_KEY}{code}{serial}"
     return hashlib.md5(raw.encode()).hexdigest()
 
+
 async def send_webhook(msg):
+
+    if WEBHOOK_URL == "YOUR_WEBHOOK":
+        return
+
     async with aiohttp.ClientSession() as session:
         await session.post(WEBHOOK_URL, json={"content": msg})
 
@@ -71,10 +79,15 @@ async def send_webhook(msg):
 
 async def auto_check(interaction, params, product, price, order_code, link):
 
-    await asyncio.sleep(10)
+    await asyncio.sleep(15)
 
     async with aiohttp.ClientSession() as session:
+
         async with session.get(API_URL, params=params) as resp:
+
+            if resp.content_type != "application/json":
+                return
+
             data = await resp.json()
 
     status = int(data.get("status", 0))
@@ -84,16 +97,12 @@ async def auto_check(interaction, params, product, price, order_code, link):
 
         embed = discord.Embed(
             title="✅ Thanh toán thành công",
-            color=discord.Color.green(),
-            timestamp=discord.utils.utcnow()
+            color=discord.Color.green()
         )
 
-        embed.add_field(name="📦 Sản phẩm", value=product, inline=False)
+        embed.add_field(name="📦 Sản phẩm", value=product)
         embed.add_field(name="💰 Giá", value=f"{price:,} VND")
-        embed.add_field(name="🆔 Mã đơn", value=order_code)
         embed.add_field(name="📥 Link nhận", value=link)
-
-        embed.set_footer(text="Card Payment System")
 
         await interaction.channel.send(embed=embed)
 
@@ -102,51 +111,94 @@ async def auto_check(interaction, params, product, price, order_code, link):
             (order_code,)
         )
 
-        cursor.execute("INSERT INTO revenue VALUES(?)", (price,))
+        cursor.execute("INSERT INTO revenue VALUES(?)",(price,))
         db.commit()
 
 # ==============================
-# CANCEL VIEW
+# TELCO DROPDOWN
 # ==============================
 
-class CancelConfirm(discord.ui.View):
-
-    @discord.ui.button(label="Huỷ đơn", style=discord.ButtonStyle.red)
-    async def yes(self, interaction: discord.Interaction, button: discord.ui.Button):
-
-        await interaction.response.send_message("Đang huỷ đơn...")
-
-        await asyncio.sleep(3)
-        await interaction.channel.delete()
-
-    @discord.ui.button(label="Giữ đơn", style=discord.ButtonStyle.green)
-    async def no(self, interaction: discord.Interaction, button: discord.ui.Button):
-
-        await interaction.response.send_message(
-            "Đơn vẫn được giữ",
-            ephemeral=True
-        )
-
-# ==============================
-# CARD MODAL
-# ==============================
-
-class CardModal(discord.ui.Modal, title="💳 Thanh toán thẻ cào"):
-
-    telco = discord.ui.TextInput(label="Nhà mạng (VIETTEL/MOBI/VINA)")
-    serial = discord.ui.TextInput(label="Serial")
-    code = discord.ui.TextInput(label="Mã thẻ")
+class TelcoSelect(discord.ui.Select):
 
     def __init__(self, order_code, product, price, link):
 
-        super().__init__()
+        options = [
+
+            discord.SelectOption(label="📱 Viettel", value="VIETTEL"),
+            discord.SelectOption(label="📱 Vinaphone", value="VINA"),
+            discord.SelectOption(label="📱 Mobifone", value="MOBI"),
+
+            discord.SelectOption(label="🎮 Garena (Duyệt chậm ~3h)", value="GARENA"),
+            discord.SelectOption(label="🎮 Zing", value="ZING"),
+
+            discord.SelectOption(label="💰 Vcoin", value="VCOIN"),
+            discord.SelectOption(label="💰 Scoin", value="SCOIN"),
+        ]
+
+        super().__init__(
+            placeholder="📡 Chọn nhà mạng thẻ",
+            options=options
+        )
 
         self.order_code = order_code
         self.product = product
         self.price = price
         self.link = link
 
+
+    async def callback(self, interaction: discord.Interaction):
+
+        telco = self.values[0]
+
+        await interaction.response.send_modal(
+            CardModal(
+                telco,
+                self.order_code,
+                self.product,
+                self.price,
+                self.link
+            )
+        )
+
+# ==============================
+# VIEW CHỌN TELCO
+# ==============================
+
+class TelcoView(discord.ui.View):
+
+    def __init__(self, order_code, product, price, link):
+        super().__init__(timeout=None)
+
+        self.add_item(
+            TelcoSelect(order_code, product, price, link)
+        )
+
+# ==============================
+# CARD MODAL
+# ==============================
+
+class CardModal(discord.ui.Modal, title="💳 Nạp thẻ cào"):
+
+    serial = discord.ui.TextInput(
+        label="Số Serial"
+    )
+
+    code = discord.ui.TextInput(
+        label="Mã thẻ"
+    )
+
+    def __init__(self, telco, order_code, product, price, link):
+
+        super().__init__()
+
+        self.telco = telco
+        self.order_code = order_code
+        self.product = product
+        self.price = price
+        self.link = link
+
         self.serial.placeholder = f"Nạp đúng mệnh giá: {price:,} VND"
+
 
     async def on_submit(self, interaction: discord.Interaction):
 
@@ -156,7 +208,7 @@ class CardModal(discord.ui.Modal, title="💳 Thanh toán thẻ cào"):
             if time.time() - cooldown[user] < COOLDOWN_TIME:
 
                 await interaction.response.send_message(
-                    "Bạn đang nạp quá nhanh",
+                    "⏱ Bạn đang nạp quá nhanh",
                     ephemeral=True
                 )
                 return
@@ -169,7 +221,7 @@ class CardModal(discord.ui.Modal, title="💳 Thanh toán thẻ cào"):
 
         params = {
 
-            "telco": self.telco.value.upper(),
+            "telco": self.telco,
             "code": self.code.value,
             "serial": self.serial.value,
             "amount": self.price,
@@ -183,6 +235,18 @@ class CardModal(discord.ui.Modal, title="💳 Thanh toán thẻ cào"):
             async with aiohttp.ClientSession() as session:
 
                 async with session.get(API_URL, params=params) as resp:
+
+                    if resp.content_type != "application/json":
+
+                        embed = discord.Embed(
+                            title="❌ Lỗi API",
+                            description="Server trả dữ liệu không hợp lệ",
+                            color=discord.Color.red()
+                        )
+
+                        await interaction.followup.send(embed=embed)
+                        return
+
                     data = await resp.json()
 
             status = int(data.get("status", 0))
@@ -193,7 +257,7 @@ class CardModal(discord.ui.Modal, title="💳 Thanh toán thẻ cào"):
                 if real_amount != self.price:
 
                     await interaction.followup.send(
-                        f"❌ Thẻ {real_amount:,} không khớp đơn {self.price:,}"
+                        f"❌ Mệnh giá thẻ {real_amount:,} không khớp đơn {self.price:,}"
                     )
                     return
 
@@ -208,6 +272,10 @@ class CardModal(discord.ui.Modal, title="💳 Thanh toán thẻ cào"):
 
                 await interaction.channel.send(embed=embed)
 
+                await send_webhook(
+                    f"💰 NẠP CARD\nUser: {interaction.user}\nAmount: {self.price}"
+                )
+
                 cursor.execute(
                     "UPDATE orders SET status='success' WHERE order_code=?",
                     (self.order_code,)
@@ -220,12 +288,12 @@ class CardModal(discord.ui.Modal, title="💳 Thanh toán thẻ cào"):
 
                 db.commit()
 
-                await interaction.followup.send("Thẻ hợp lệ")
+                await interaction.followup.send("✅ Thẻ hợp lệ")
 
             elif status == 99:
 
                 await interaction.followup.send(
-                    "Thẻ đang xử lý, hệ thống sẽ kiểm tra lại..."
+                    "⏳ Thẻ đang xử lý, hệ thống sẽ kiểm tra lại..."
                 )
 
                 asyncio.create_task(
@@ -247,7 +315,7 @@ class CardModal(discord.ui.Modal, title="💳 Thanh toán thẻ cào"):
 
         except Exception as e:
 
-            await interaction.followup.send(f"Lỗi: {e}")
+            await interaction.followup.send(f"⚠️ Lỗi hệ thống: {e}")
 
 # ==============================
 # PAYMENT VIEW
@@ -256,7 +324,6 @@ class CardModal(discord.ui.Modal, title="💳 Thanh toán thẻ cào"):
 class CardPaymentView(discord.ui.View):
 
     def __init__(self, order_code, product, price, link):
-
         super().__init__(timeout=None)
 
         self.order_code = order_code
@@ -264,24 +331,18 @@ class CardPaymentView(discord.ui.View):
         self.price = price
         self.link = link
 
-    @discord.ui.button(label="Thanh toán card", style=discord.ButtonStyle.green)
+    @discord.ui.button(label="💳 Thanh toán card", style=discord.ButtonStyle.green)
     async def card(self, interaction: discord.Interaction, button: discord.ui.Button):
 
-        await interaction.response.send_modal(
-            CardModal(
+        await interaction.response.send_message(
+            "📡 Vui lòng chọn loại thẻ:",
+            view=TelcoView(
                 self.order_code,
                 self.product,
                 self.price,
                 self.link
-            )
-        )
-
-    @discord.ui.button(label="Huỷ đơn", style=discord.ButtonStyle.red)
-    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
-
-        await interaction.response.send_message(
-            "Bạn có chắc muốn huỷ đơn?",
-            view=CancelConfirm()
+            ),
+            ephemeral=True
         )
 
 # ==============================
@@ -291,7 +352,6 @@ class CardPaymentView(discord.ui.View):
 class BuyView(discord.ui.View):
 
     def __init__(self, price, product, link):
-
         super().__init__(timeout=None)
 
         self.price = price
@@ -334,7 +394,7 @@ class BuyView(discord.ui.View):
             color=discord.Color.blue()
         )
 
-        embed.add_field(name="📦 Sản phẩm", value=self.product, inline=False)
+        embed.add_field(name="📦 Sản phẩm", value=self.product)
         embed.add_field(name="💰 Giá", value=f"{self.price:,} VND")
         embed.add_field(name="🆔 Mã đơn", value=order_code)
 
@@ -373,10 +433,8 @@ class CardSystem(commands.Cog):
             color=discord.Color.blue()
         )
 
-        embed.add_field(name="📦 Sản phẩm", value=product, inline=False)
+        embed.add_field(name="📦 Sản phẩm", value=product)
         embed.add_field(name="💰 Giá", value=f"{price:,} VND")
-
-        embed.set_footer(text="Shop Payment System")
 
         await ctx.send(
             embed=embed,
@@ -385,4 +443,3 @@ class CardSystem(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(CardSystem(bot))
-
