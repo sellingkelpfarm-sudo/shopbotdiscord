@@ -9,15 +9,20 @@ cooldowns = {}
 bank_waiting = {}
 
 # ID KÊNH WEBHOOK BIẾN ĐỘNG SỐ DƯ
-BANK_CHANNEL_ID = 1479440469120389221  # <-- sửa thành ID kênh của bạn
+BANK_CHANNEL_ID = 1479440469120389221
 
 
 # ======================
-# GENERATE ORDER CODE
+# GENERATE ORDER CODE (ANTI DUPLICATE)
 # ======================
 
 def generate_code():
-    return ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
+
+    while True:
+        code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
+
+        if code not in bank_waiting:
+            return code
 
 
 # ======================
@@ -242,10 +247,6 @@ class SellSystem(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    # ======================
-    # COMMAND SELLBANK
-    # ======================
-
     @commands.command(name="sellbank")
     async def sellbank(self, ctx, bank_price: int, link: str):
 
@@ -266,9 +267,36 @@ class SellSystem(commands.Cog):
             view=BuyView(bank_price, product, link)
         )
 
-    # ======================
-    # AUTO BANK DETECT
-    # ======================
+    @commands.command(name="dabank")
+    @commands.has_permissions(administrator=True)
+    async def dabank(self, ctx, order_code: str):
+
+        order_code = order_code.upper()
+
+        if order_code not in bank_waiting:
+            await ctx.send("❌ Không tìm thấy mã đơn này.")
+            return
+
+        data = bank_waiting[order_code]
+
+        channel = self.bot.get_channel(data["channel"])
+
+        embed = discord.Embed(
+            title="🎉 THANH TOÁN THÀNH CÔNG (ADMIN)",
+            description="Admin đã xác nhận giao dịch!",
+            color=discord.Color.green()
+        )
+
+        embed.add_field(name="📦 Sản phẩm", value=data["product"], inline=False)
+        embed.add_field(name="💰 Số tiền", value=f"{data['price']:,} VND")
+        embed.add_field(name="🧾 Mã đơn", value=order_code)
+        embed.add_field(name="📥 Link tải", value=data["link"], inline=False)
+
+        await channel.send(embed=embed)
+
+        del bank_waiting[order_code]
+
+        await ctx.send("✅ Đã xác nhận giao dịch thành công.")
 
     @commands.Cog.listener()
     async def on_message(self, message):
@@ -293,9 +321,6 @@ class SellSystem(commands.Cog):
 
         channel = self.bot.get_channel(data["channel"])
 
-        if channel is None:
-            return
-
         embed = discord.Embed(
             title="🎉 THANH TOÁN THÀNH CÔNG",
             description="Đã xác nhận giao dịch!",
@@ -303,14 +328,9 @@ class SellSystem(commands.Cog):
         )
 
         embed.add_field(name="📦 Sản phẩm", value=data["product"], inline=False)
-
         embed.add_field(name="💰 Số tiền", value=f"{data['price']:,} VND")
-
         embed.add_field(name="🧾 Mã đơn", value=order_code)
-
         embed.add_field(name="📥 Link tải", value=data["link"], inline=False)
-
-        embed.set_footer(text="Nếu có sự cố nào thì hãy nhắn tin tại đây để admin giải quyết nhé!Cảm ơn bạn đã mua hàng ❤️^w^")
 
         await channel.send(embed=embed)
 
