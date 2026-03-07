@@ -24,7 +24,11 @@ order_code TEXT,
 user_id INTEGER,
 product TEXT,
 price INTEGER,
-status TEXT
+status TEXT,
+telco TEXT,
+serial TEXT,
+code TEXT,
+link TEXT
 )
 """)
 
@@ -62,7 +66,7 @@ async def send_webhook(msg):
         await session.post(WEBHOOK_URL, json={"content": msg})
 
 
-async def auto_check(interaction, params, product, price, order_code, link):
+async def auto_check(interaction, params, product, price, order_code):
 
     for i in range(20):
 
@@ -94,20 +98,25 @@ async def auto_check(interaction, params, product, price, order_code, link):
                 )
                 return
 
-            embed = discord.Embed(
-                title="🎉 THANH TOÁN THÀNH CÔNG",
-                color=discord.Color.green()
+            cursor.execute("SELECT telco,serial,code FROM orders WHERE order_code=?",(order_code,))
+            card = cursor.fetchone()
+
+            telco,serial,code = card
+
+            await send_webhook(
+f"""XÁC NHẬN THANH TOÁN THÀNH CÔNG
+Số tiền: {price:,} VND
+Nhà mạng: {telco}
+Số Seri: {serial}
+Mã thẻ cào: {code}"""
             )
 
-            embed.add_field(name="📦 Sản phẩm", value=product)
-            embed.add_field(name="💰 Giá", value=f"{price:,} VND")
-            embed.add_field(name="🆔 Mã đơn", value=order_code)
-            embed.add_field(name="📥 Link nhận", value=link)
-
-            await interaction.channel.send(embed=embed)
+            await interaction.channel.send(
+                "✅ Thẻ hợp lệ.\n⏳ Đang chờ admin xác nhận..."
+            )
 
             cursor.execute(
-                "UPDATE orders SET status='success' WHERE order_code=?",
+                "UPDATE orders SET status='paid' WHERE order_code=?",
                 (order_code,)
             )
 
@@ -117,10 +126,6 @@ async def auto_check(interaction, params, product, price, order_code, link):
             )
 
             db.commit()
-
-            await send_webhook(
-                f"💰 CARD SUCCESS\nUser: {interaction.user}\nPrice: {price}"
-            )
 
             return
 
@@ -235,6 +240,14 @@ class CardModal(discord.ui.Modal, title="💳 NẠP THẺ CÀO"):
             "sign": sign
         }
 
+        cursor.execute("""
+UPDATE orders 
+SET telco=?,serial=?,code=?,link=? 
+WHERE order_code=?
+""",(self.telco,self.serial.value,self.code.value,self.link,self.order_code))
+
+        db.commit()
+
         try:
 
             async with aiohttp.ClientSession() as session:
@@ -271,8 +284,7 @@ class CardModal(discord.ui.Modal, title="💳 NẠP THẺ CÀO"):
                     params,
                     self.product,
                     self.price,
-                    self.order_code,
-                    self.link
+                    self.order_code
                 )
             )
 
@@ -419,8 +431,8 @@ class BuyView(discord.ui.View):
         )
 
         cursor.execute(
-            "INSERT INTO orders VALUES(?,?,?,?,?)",
-            (order_code, interaction.user.id, self.product, self.price, "pending")
+            "INSERT INTO orders VALUES(?,?,?,?,?,?,?,?,?)",
+            (order_code, interaction.user.id, self.product, self.price, "pending", "", "", "", self.link)
         )
 
         db.commit()
@@ -480,6 +492,37 @@ class CardSystem(commands.Cog):
             embed=embed,
             view=BuyView(price, product, link)
         )
+
+    @commands.command()
+    @commands.has_permissions(administrator=True)
+    async def daxong(self, ctx):
+
+        order_code = ctx.channel.name.split("-")[0]
+
+        cursor.execute("SELECT user_id,link,product,price FROM orders WHERE order_code=?",(order_code,))
+        order = cursor.fetchone()
+
+        if not order:
+            await ctx.send("Không tìm thấy đơn.")
+            return
+
+        user_id,link,product,price = order
+
+        user = ctx.guild.get_member(user_id)
+
+        embed = discord.Embed(
+            title="🎉 ĐƠN HÀNG HOÀN TẤT",
+            color=discord.Color.green()
+        )
+
+        embed.add_field(name="📦 Sản phẩm",value=product)
+        embed.add_field(name="💰 Giá",value=f"{price:,} VND")
+        embed.add_field(name="🔗 Link nhận hàng",value=link)
+
+        await ctx.send(user.mention,embed=embed)
+
+        cursor.execute("UPDATE orders SET status='done' WHERE order_code=?",(order_code,))
+        db.commit()
 
 
 async def setup(bot):
