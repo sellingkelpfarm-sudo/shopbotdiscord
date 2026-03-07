@@ -310,7 +310,7 @@ class SellSystem(commands.Cog):
 
         embed.add_field(name="📥 Link tải", value=data["link"], inline=False)
 
-        embed.set_footer(text="Cảm ơn bạn đã mua hàng ❤️|Nếu có sự cố nào thì hãy nhắn tin tại đây để admin giải quyết nhé!^w^")
+        embed.set_footer(text="Nếu có sự cố nào thì hãy nhắn tin tại đây để admin giải quyết nhé!Cảm ơn bạn đã mua hàng ❤️^w^")
 
         await channel.send(embed=embed)
 
@@ -319,4 +319,5 @@ class SellSystem(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(SellSystem(bot))
+
 
