@@ -22,4 +22,3 @@ setup_menu(bot)
 setup_sell(bot)
 
 bot.run(os.getenv("TOKEN"))
-
