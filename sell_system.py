@@ -92,41 +92,50 @@ class ConfirmView(discord.ui.View):
 
         vietqr = f"https://img.vietqr.io/image/{BANK}-{ACCOUNT}-compact2.png?amount={self.price}&addInfo=MaDonHang_{self.code}&accountName={ACCOUNT_NAME}"
 
-        price_text = f"{self.price:,}".replace(",", ".") + " VND"
+        price_text = f"{self.price:,}".replace(",", ".") + "VND"
 
         embed = discord.Embed(
             title="💳 THANH TOÁN ĐƠN HÀNG",
-            description=(
-                f"📦 **Sản phẩm:** `{self.product_name}`\n"
-                f"💰 **Số tiền:** `{price_text}`\n"
-                f"🆔 **Mã giao dịch:** `{self.code}`\n\n"
-
-                "⚠ **Lưu ý quan trọng**\n"
-                "• Không chỉnh sửa nội dung chuyển khoản\n"
-                "• Thanh toán đúng số tiền\n\n"
-
-                "⏳ **Thời gian thanh toán: 5 phút**\n"
-                "_Sau khi thanh toán admin sẽ kiểm tra và xác nhận._"
-            ),
             color=discord.Color.green()
         )
 
         embed.set_image(url=vietqr)
 
-        embed.set_footer(text="Quét QR bằng app ngân hàng để thanh toán")
-
         await interaction.response.send_message(embed=embed)
 
         qr_message = await interaction.original_response()
 
-        await asyncio.sleep(300)
+        time_left = 300
+
+        while time_left > 0:
+
+            minutes = time_left // 60
+            seconds = time_left % 60
+
+            embed.description = (
+                f"📦 **Tên đơn hàng:** {self.product_name}\n"
+                f"💰 **Số tiền:** {price_text}\n"
+                f"🆔 **Mã giao dịch:** {self.code}\n\n"
+
+                "⚠ **Lưu ý:**\n"
+                "• Không chỉnh sửa nội dung chuyển khoản\n"
+                "• Thanh toán đúng số tiền\n\n"
+
+                f"⏳ **Thời gian còn lại:** `{minutes:02}:{seconds:02}`"
+            )
+
+            await qr_message.edit(embed=embed)
+
+            await asyncio.sleep(5)
+
+            time_left -= 5
 
         try:
             await qr_message.delete()
 
             timeout_embed = discord.Embed(
                 title="⏰ ĐƠN HÀNG HẾT HẠN",
-                description="⚠ **ĐÃ QUÁ GIỜ THỰC HIỆN GIAO DỊCH**\n\nVui lòng tạo lại đơn hàng mới.",
+                description="⚠ **ĐÃ QUÁ GIỜ THỰC HIỆN GIAO DỊCH. VUI LÒNG THỬ LẠI.**",
                 color=discord.Color.red()
             )
 
@@ -190,3 +199,4 @@ def setup_sell(bot):
         embed.set_footer(text="Shop Schematic • Chúc bạn sử dụng vui vẻ!")
 
         await ctx.send(embed=embed)
+
