@@ -7,7 +7,7 @@ BANK = "MB"
 ACCOUNT = "0764495919"
 ACCOUNT_NAME = "NGUYENTHANHDAT"
 
-ORDERS_CATEGORY_NAME = "orders"
+ORDERS_CATEGORY_NAME = "Orders"
 
 orders = {}
 
@@ -167,3 +167,4 @@ def setup_sell(bot):
         )
 
         await ctx.send(embed=embed)
+
