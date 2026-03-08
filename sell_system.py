@@ -10,31 +10,19 @@ buy_cooldowns = {}
 bank_waiting = {}
 order_activity = {}
 
-# ID KÊNH WEBHOOK BIẾN ĐỘNG SỐ DƯ
 BANK_CHANNEL_ID = 1479440469120389221
 
-ORDER_TIMEOUT = 900  # 15 phút
+ORDER_TIMEOUT = 900
 
-
-# ======================
-# GENERATE ORDER CODE
-# ======================
 
 def generate_code():
-
     while True:
         code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
-
         if code not in bank_waiting:
             return code
 
 
-# ======================
-# ANTI SPAM THANH TOÁN
-# ======================
-
 def anti_spam(user_id):
-
     now = time.time()
 
     if user_id in cooldowns:
@@ -45,12 +33,7 @@ def anti_spam(user_id):
     return True
 
 
-# ======================
-# ANTI SPAM TẠO ĐƠN
-# ======================
-
 def anti_spam_buy(user_id):
-
     now = time.time()
 
     if user_id in buy_cooldowns:
@@ -62,25 +45,29 @@ def anti_spam_buy(user_id):
 
 
 # ======================
-# AUTO CLOSE CHANNEL
+# AUTO CLOSE CHANNEL (FIX)
 # ======================
 
 async def auto_close_channel(channel, order_code):
 
     await asyncio.sleep(ORDER_TIMEOUT)
 
-    if order_code in order_activity and not order_activity[order_code]:
+    if order_code not in order_activity:
+        return
 
+    if order_activity[order_code]:
+        return
+
+    try:
         await channel.send("⌛ Đơn hàng đã bị đóng do không thanh toán trong 15 phút.")
-
         await asyncio.sleep(5)
-
         await channel.delete()
+    except:
+        pass
 
+    if order_code in order_activity:
+        del order_activity[order_code]
 
-# ======================
-# CANCEL CONFIRM
-# ======================
 
 class CancelConfirm(discord.ui.View):
 
@@ -101,10 +88,6 @@ class CancelConfirm(discord.ui.View):
             ephemeral=True
         )
 
-
-# ======================
-# BANK TIMER
-# ======================
 
 async def bank_countdown(message, order_code):
 
@@ -140,10 +123,6 @@ async def bank_countdown(message, order_code):
     await message.edit(embed=embed, view=None)
 
 
-# ======================
-# PAYMENT VIEW
-# ======================
-
 class PaymentView(discord.ui.View):
 
     def __init__(self, bank_price, product, link, order_code):
@@ -165,7 +144,10 @@ class PaymentView(discord.ui.View):
             )
             return
 
+        # FIX: hủy auto close
         order_activity[self.code] = True
+        if self.code in order_activity:
+            del order_activity[self.code]
 
         qr = f"https://img.vietqr.io/image/MB-0764495919-compact2.png?amount={self.bank_price}&addInfo={self.code}"
 
@@ -211,10 +193,6 @@ class PaymentView(discord.ui.View):
             view=CancelConfirm()
         )
 
-
-# ======================
-# BUY VIEW
-# ======================
 
 class BuyView(discord.ui.View):
 
@@ -292,10 +270,6 @@ class BuyView(discord.ui.View):
             ephemeral=True
         )
 
-
-# ======================
-# SELL SYSTEM
-# ======================
 
 class SellSystem(commands.Cog):
 
@@ -394,5 +368,3 @@ class SellSystem(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(SellSystem(bot))
-
-
