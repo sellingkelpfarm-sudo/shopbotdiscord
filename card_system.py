@@ -15,7 +15,7 @@ API_URL = "https://doithe1s.vn/chargingws/v2"
 
 CALLBACK_URL = "https://shopbotdiscord.railway.app/charge/callback"
 
-WEBHOOK_URL = "https://discord.com/api/webhooks/xxxx"
+WEBHOOK_URL = "https://discord.com/api/webhooks/1479880863243047202/uShjrO4fWTWzCpz2X30-oivNP6XqD224HhpqjBB6oiqUEcE6icMcHR8k728R-1Pv5mlg"
 
 db = sqlite3.connect("orders.db", check_same_thread=False)
 cursor = db.cursor()
@@ -377,3 +377,4 @@ class CardSystem(commands.Cog):
 async def setup(bot):
     if not bot.get_cog("CardSystem"):
         await bot.add_cog(CardSystem(bot))
+
