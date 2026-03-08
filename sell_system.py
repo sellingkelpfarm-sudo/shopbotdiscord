@@ -282,11 +282,11 @@ class SellSystem(commands.Cog):
         product = ctx.channel.name
 
         embed = discord.Embed(
-            title="🛒 SẢN PHẨM",
+            title="🛒 THANH TOÁN BẰNG CÁCH CHUYỂN KHOẢN NGÂN HÀNG",
             description=(
-                f"📦 **Sản phẩm:** {product}\n\n"
-                f"💳 Chuyển khoản: {bank_price:,} VND\n\n"
-                "👇 Nhấn MUA NGAY để tạo đơn"
+                f"📦 **Tên hàng:** {product}\n\n"
+                f"💳 Số tiền: {bank_price:,} VND\n\n"
+                "👇  Vui lòng nhấn nút MUA NGAY bên dưới để bắt đầu thanh toán"
             ),
             color=discord.Color.blue()
         )
@@ -368,3 +368,4 @@ class SellSystem(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(SellSystem(bot))
+
