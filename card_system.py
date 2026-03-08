@@ -15,7 +15,7 @@ API_URL = "https://doithe1s.vn/chargingws/v2"
 
 CALLBACK_URL = "https://shopbotdiscord.railway.app/charge/callback"
 
-WEBHOOK_URL = "https://discord.com/api/webhooks/1479880863243047202/uShjrO4fWTWzCpz2X30-oivNP6XqD224HhpqjBB6oiqUEcE6icMcHR8k728R-1Pv5mlg"
+WEBHOOK_URL = "https://discord.com/api/webhooks/xxxx"
 
 db = sqlite3.connect("orders.db", check_same_thread=False)
 cursor = db.cursor()
@@ -43,7 +43,6 @@ amount INTEGER
 db.commit()
 
 cooldown = {}
-buy_cooldown = {}
 COOLDOWN_TIME = 10
 
 order_activity = {}
@@ -64,11 +63,6 @@ def create_sign(telco, code, serial, amount):
     return hashlib.md5(raw.encode()).hexdigest()
 
 
-async def send_webhook(msg):
-    async with aiohttp.ClientSession() as session:
-        await session.post(WEBHOOK_URL, json={"content": msg})
-
-
 async def auto_close_channel(channel, order_code):
 
     await asyncio.sleep(ORDER_TIMEOUT)
@@ -81,29 +75,6 @@ async def auto_close_channel(channel, order_code):
             await channel.delete()
         except:
             pass
-
-
-class CancelConfirmView(discord.ui.View):
-
-    def __init__(self):
-        super().__init__(timeout=30)
-
-    @discord.ui.button(label="CÓ", style=discord.ButtonStyle.red)
-    async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
-
-        await interaction.response.send_message("🗑 Kênh sẽ bị xóa sau 5 giây...")
-
-        await asyncio.sleep(5)
-
-        await interaction.channel.delete()
-
-    @discord.ui.button(label="KHÔNG", style=discord.ButtonStyle.gray)
-    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
-
-        await interaction.response.send_message(
-            "✅ Đã giữ lại đơn hàng.",
-            ephemeral=True
-        )
 
 
 class CardModal(discord.ui.Modal, title="💳 NẠP THẺ CÀO"):
@@ -175,6 +146,7 @@ WHERE order_code=?
 
             async with aiohttp.ClientSession() as session:
 
+                # FIX GET → POST
                 async with session.post(API_URL, data=params) as resp:
 
                     if resp.content_type != "application/json":
@@ -282,7 +254,7 @@ class CardPaymentView(discord.ui.View):
         order_activity[self.order_code] = True
 
         await interaction.response.send_message(
-            "📡 Chọn loại thẻ (Lưu ý:Nạp đúng mệnh giá thẻ, Nạp sai sẽ không được hoàn lại tiền!)",
+            "📡 Chọn loại thẻ (Lưu ý:Nạp đúng mệnh giá thẻ)",
             view=TelcoView(
                 self.order_code,
                 self.product,
@@ -297,7 +269,6 @@ class CardPaymentView(discord.ui.View):
 
         await interaction.response.send_message(
             "⚠️ BẠN CÓ CHẮC HỦY ĐƠN HÀNG CHỨ?",
-            view=CancelConfirmView(),
             ephemeral=True
         )
 
