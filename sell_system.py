@@ -286,7 +286,7 @@ class SellSystem(commands.Cog):
             description=(
                 f"📦 **Tên hàng:** {product}\n\n"
                 f"💳 **Số tiền**: {bank_price:,} VND\n\n"
-                "👇 **Vui lòng nhấn nút MUA NGAY bên dưới để bắt đầu thanh toán**"
+                "👇 **Nhấn nút MUA NGAY bên dưới để bắt đầu thanh toán**"
             ),
             color=discord.Color.blue()
         )
@@ -368,5 +368,6 @@ class SellSystem(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(SellSystem(bot))
+
 
 
