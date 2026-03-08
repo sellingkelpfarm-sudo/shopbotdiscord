@@ -58,7 +58,7 @@ def generate_code():
             return code
 
 
-# FIX SIGN API (ĐÃ SỬA)
+# FIX SIGN API
 def create_sign(telco, code, serial, amount):
     raw = f"{PARTNER_ID}{code}{serial}{telco}{amount}{PARTNER_KEY}"
     return hashlib.md5(raw.encode()).hexdigest()
@@ -149,7 +149,6 @@ class CardModal(discord.ui.Modal, title="💳 NẠP THẺ CÀO"):
 
         await interaction.response.defer(ephemeral=True)
 
-        # SỬA CHỖ NÀY
         sign = create_sign(self.telco, self.code.value, self.serial.value, self.price)
 
         params = {
@@ -176,7 +175,6 @@ WHERE order_code=?
 
             async with aiohttp.ClientSession() as session:
 
-                # SỬA GET -> POST
                 async with session.post(API_URL, data=params) as resp:
 
                     if resp.content_type != "application/json":
