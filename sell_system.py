@@ -240,8 +240,8 @@ class BuyView(discord.ui.View):
         embed = discord.Embed(
             title="🧾 TẠO ĐƠN HÀNG",
             description=(
-                f"📦 **Sản phẩm:** {self.product}\n"
-                f"💰 **Giá:** {self.bank_price:,} VND\n"
+                f"📦 **Tên hàng:** {self.product}\n"
+                f"💰 **Số tiền:** {self.bank_price:,} VND\n"
                 f"🆔 **Mã đơn:** {order_code}\n\n"
                 "👇 Chọn phương thức thanh toán"
             ),
@@ -285,8 +285,8 @@ class SellSystem(commands.Cog):
             title="🛒 THANH TOÁN BẰNG CÁCH CHUYỂN KHOẢN NGÂN HÀNG",
             description=(
                 f"📦 **Tên hàng:** {product}\n\n"
-                f"💳 Số tiền: {bank_price:,} VND\n\n"
-                "👇  Vui lòng nhấn nút MUA NGAY bên dưới để bắt đầu thanh toán"
+                f"💳 **Số tiền**: {bank_price:,} VND\n\n"
+                "👇 **Vui lòng nhấn nút MUA NGAY bên dưới để bắt đầu thanh toán**"
             ),
             color=discord.Color.blue()
         )
@@ -316,7 +316,7 @@ class SellSystem(commands.Cog):
             color=discord.Color.green()
         )
 
-        embed.add_field(name="📦 Sản phẩm", value=data["product"], inline=False)
+        embed.add_field(name="📦 Tên hàng", value=data["product"], inline=False)
         embed.add_field(name="💰 Số tiền", value=f"{data['price']:,} VND")
         embed.add_field(name="🧾 Mã đơn", value=order_code)
         embed.add_field(name="📥 Link tải", value=data["link"], inline=False)
@@ -356,7 +356,7 @@ class SellSystem(commands.Cog):
             color=discord.Color.green()
         )
 
-        embed.add_field(name="📦 Sản phẩm", value=data["product"], inline=False)
+        embed.add_field(name="📦 Tên hàng", value=data["product"], inline=False)
         embed.add_field(name="💰 Số tiền", value=f"{data['price']:,} VND")
         embed.add_field(name="🧾 Mã đơn", value=order_code)
         embed.add_field(name="📥 Link tải", value=data["link"], inline=False)
@@ -368,4 +368,5 @@ class SellSystem(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(SellSystem(bot))
+
 
