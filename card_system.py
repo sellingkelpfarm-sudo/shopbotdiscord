@@ -13,6 +13,8 @@ PARTNER_KEY = "0c8672410bf6ba8caeb009508b026ed9"
 
 API_URL = "https://doithe1s.vn/chargingws/v2"
 
+CALLBACK_URL = "https://shopbotdiscord.railway.app/charge/callback"
+
 WEBHOOK_URL = "https://discord.com/api/webhooks/1479880863243047202/uShjrO4fWTWzCpz2X30-oivNP6XqD224HhpqjBB6oiqUEcE6icMcHR8k728R-1Pv5mlg"
 
 db = sqlite3.connect("orders.db", check_same_thread=False)
@@ -56,8 +58,9 @@ def generate_code():
             return code
 
 
-def create_sign(code, serial):
-    raw = f"{PARTNER_KEY}{code}{serial}"
+# FIX SIGN API
+def create_sign(telco, code, serial):
+    raw = f"{telco}{code}{serial}{PARTNER_KEY}"
     return hashlib.md5(raw.encode()).hexdigest()
 
 
@@ -66,93 +69,18 @@ async def send_webhook(msg):
         await session.post(WEBHOOK_URL, json={"content": msg})
 
 
-async def auto_check(interaction, params, product, price, order_code):
-
-    for i in range(20):
-
-        await asyncio.sleep(30)
-
-        try:
-
-            async with aiohttp.ClientSession() as session:
-
-                async with session.post(API_URL, data=params) as resp:
-
-                    if resp.content_type != "application/json":
-                        continue
-
-                    data = await resp.json()
-
-        except:
-            continue
-
-        status = int(data.get("status", 0))
-        real_amount = int(data.get("amount", 0))  # FIX
-
-        if status == 1:
-
-            if real_amount != price:
-
-                await interaction.channel.send(
-                    "❌ Mệnh giá thẻ không đúng với đơn hàng."
-                )
-                return
-
-            cursor.execute("SELECT telco,serial,code FROM orders WHERE order_code=?", (order_code,))
-            card = cursor.fetchone()
-
-            telco, serial, code = card
-
-            await send_webhook(
-f"""XÁC NHẬN THANH TOÁN THÀNH CÔNG
-Số tiền: {price:,} VND
-Nhà mạng: {telco}
-Số Seri: {serial}
-Mã thẻ cào: {code}"""
-            )
-
-            await interaction.channel.send(
-                "✅ Thẻ hợp lệ.\n⏳ Đang chờ admin xác nhận..."
-            )
-
-            cursor.execute(
-                "UPDATE orders SET status='paid' WHERE order_code=?",
-                (order_code,)
-            )
-
-            cursor.execute(
-                "INSERT INTO revenue VALUES(?)",
-                (price,)
-            )
-
-            db.commit()
-
-            return
-
-        if status in [2, 3]:
-
-            await interaction.channel.send(
-                "❌ Thẻ bị từ chối hoặc sai mệnh giá."
-            )
-
-            return
-
-    await interaction.channel.send(
-        "❌ Giao dịch không thành công sau 10 phút."
-    )
-
-
 async def auto_close_channel(channel, order_code):
 
     await asyncio.sleep(ORDER_TIMEOUT)
 
     if order_code in order_activity and not order_activity[order_code]:
 
-        await channel.send("⌛ Đơn hàng đã bị đóng do không thanh toán trong 15 phút.")
-
-        await asyncio.sleep(5)
-
-        await channel.delete()
+        try:
+            await channel.send("⌛ Đơn hàng đã bị đóng do không thanh toán trong 15 phút.")
+            await asyncio.sleep(5)
+            await channel.delete()
+        except:
+            pass
 
 
 class CancelConfirmView(discord.ui.View):
@@ -179,12 +107,6 @@ class CancelConfirmView(discord.ui.View):
 
 
 class CardModal(discord.ui.Modal, title="💳 NẠP THẺ CÀO"):
-
-    notice = discord.ui.TextInput(
-        label="⚠ LƯU Ý",
-        default="Nạp đúng mệnh giá thẻ. Nạp sai mệnh giá thẻ sẽ KHÔNG được hoàn tiền!",
-        required=False
-    )
 
     serial = discord.ui.TextInput(
         label="Serial",
@@ -227,16 +149,17 @@ class CardModal(discord.ui.Modal, title="💳 NẠP THẺ CÀO"):
 
         await interaction.response.defer(ephemeral=True)
 
-        sign = create_sign(self.code.value, self.serial.value)
+        sign = create_sign(self.telco, self.code.value, self.serial.value)
 
         params = {
-
+            "command": "charging",
+            "partner_id": PARTNER_ID,
             "telco": self.telco,
             "code": self.code.value,
             "serial": self.serial.value,
             "amount": self.price,
             "request_id": self.order_code,
-            "partner_id": PARTNER_ID,
+            "callback_url": CALLBACK_URL,
             "sign": sign
         }
 
@@ -252,12 +175,12 @@ WHERE order_code=?
 
             async with aiohttp.ClientSession() as session:
 
-                async with session.post(API_URL, data=params) as resp:
+                async with session.get(API_URL, params=params) as resp:
 
                     if resp.content_type != "application/json":
 
                         await interaction.followup.send(
-                            "❌ API thẻ đang lỗi hoặc bảo trì. Vui lòng thử lại sau."
+                            "❌ API thẻ đang lỗi hoặc bảo trì."
                         )
                         return
 
@@ -275,22 +198,19 @@ WHERE order_code=?
         if status == 99:
 
             await interaction.followup.send(
-                "✅ Đã gửi thẻ thành công\n⏳ Đang chờ hệ thống xác nhận (tối đa 10 phút)"
-            )
-
-            asyncio.create_task(
-                auto_check(
-                    interaction,
-                    params,
-                    self.product,
-                    self.price,
-                    self.order_code
-                )
+                "✅ Đã gửi thẻ thành công\n⏳ Đang chờ hệ thống xác nhận"
             )
 
         elif status == 1:
 
             await interaction.followup.send("✅ Thẻ hợp lệ")
+
+            cursor.execute(
+                "INSERT INTO revenue VALUES(?)",
+                (self.price,)
+            )
+
+            db.commit()
 
         else:
 
@@ -395,20 +315,7 @@ class BuyView(discord.ui.View):
     @discord.ui.button(label="🛒 MUA NGAY", style=discord.ButtonStyle.green)
     async def buy(self, interaction: discord.Interaction, button: discord.ui.Button):
 
-        await interaction.response.defer(ephemeral=True)  # FIX
-
-        user = interaction.user.id
-
-        if user in buy_cooldown:
-            if time.time() - buy_cooldown[user] < COOLDOWN_TIME:
-
-                await interaction.followup.send(
-                    "⏱ Bạn đang tạo đơn quá nhanh. Vui lòng đợi vài giây.",
-                    ephemeral=True
-                )
-                return
-
-        buy_cooldown[user] = time.time()
+        await interaction.response.defer(ephemeral=True)
 
         guild = interaction.guild
 
@@ -494,37 +401,6 @@ class CardSystem(commands.Cog):
             embed=embed,
             view=BuyView(price, product, link)
         )
-
-    @commands.command()
-    @commands.has_permissions(administrator=True)
-    async def daxong(self, ctx):
-
-        order_code = ctx.channel.name.split("-")[0]
-
-        cursor.execute("SELECT user_id,link,product,price FROM orders WHERE order_code=?", (order_code,))
-        order = cursor.fetchone()
-
-        if not order:
-            await ctx.send("Không tìm thấy đơn.")
-            return
-
-        user_id, link, product, price = order
-
-        user = ctx.guild.get_member(user_id)
-
-        embed = discord.Embed(
-            title="🎉 ĐƠN HÀNG HOÀN TẤT",
-            color=discord.Color.green()
-        )
-
-        embed.add_field(name="📦 Sản phẩm", value=product)
-        embed.add_field(name="💰 Giá", value=f"{price:,} VND")
-        embed.add_field(name="🔗 Link nhận hàng", value=link)
-
-        await ctx.send(user.mention, embed=embed)
-
-        cursor.execute("UPDATE orders SET status='done' WHERE order_code=?", (order_code,))
-        db.commit()
 
 
 async def setup(bot):
