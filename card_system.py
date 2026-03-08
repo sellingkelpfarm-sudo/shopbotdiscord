@@ -282,7 +282,7 @@ class CardPaymentView(discord.ui.View):
         order_activity[self.order_code] = True
 
         await interaction.response.send_message(
-            "📡 Chọn loại thẻ:",
+            "📡 Chọn loại thẻ (Lưu ý:Nạp đúng mệnh giá thẻ, Nạp sai sẽ không được hoàn lại tiền!)",
             view=TelcoView(
                 self.order_code,
                 self.product,
@@ -406,3 +406,4 @@ class CardSystem(commands.Cog):
 async def setup(bot):
     if not bot.get_cog("CardSystem"):
         await bot.add_cog(CardSystem(bot))
+
