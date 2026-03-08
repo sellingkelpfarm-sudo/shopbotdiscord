@@ -16,7 +16,7 @@ async def on_ready():
 async def setup_hook():
     await bot.load_extension("sell_system")
     await bot.load_extension("MenuRole")
-    await bot.load_extension("card_system")
 
 TOKEN = os.getenv("TOKEN")
 bot.run(TOKEN)
+
