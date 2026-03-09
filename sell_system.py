@@ -10,6 +10,9 @@ buy_cooldowns = {}
 bank_waiting = {}
 order_activity = {}
 
+# ADD: giới hạn số đơn mỗi user
+user_orders = {}
+
 BANK_CHANNEL_ID = 1479440469120389221
 
 ORDER_TIMEOUT = 900
@@ -48,7 +51,7 @@ def anti_spam_buy(user_id):
 # AUTO CLOSE CHANNEL (FIX)
 # ======================
 
-async def auto_close_channel(channel, order_code):
+async def auto_close_channel(channel, order_code, user_id):
 
     await asyncio.sleep(ORDER_TIMEOUT)
 
@@ -68,17 +71,34 @@ async def auto_close_channel(channel, order_code):
     if order_code in order_activity:
         del order_activity[order_code]
 
+    # ADD: giảm số đơn user
+    if user_id in user_orders:
+        user_orders[user_id] -= 1
+        if user_orders[user_id] <= 0:
+            del user_orders[user_id]
+
 
 class CancelConfirm(discord.ui.View):
 
     @discord.ui.button(label="✅ CÓ", style=discord.ButtonStyle.red)
     async def yes(self, interaction: discord.Interaction, button: discord.ui.Button):
 
+        user_id = interaction.user.id
+
         await interaction.response.send_message("⏳ Kênh sẽ bị xoá sau 5 giây.")
 
         await asyncio.sleep(5)
 
-        await interaction.channel.delete()
+        try:
+            await interaction.channel.delete()
+        except:
+            pass
+
+        # ADD: giảm số đơn user
+        if user_id in user_orders:
+            user_orders[user_id] -= 1
+            if user_orders[user_id] <= 0:
+                del user_orders[user_id]
 
     @discord.ui.button(label="❌ KHÔNG", style=discord.ButtonStyle.green)
     async def no(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -144,7 +164,6 @@ class PaymentView(discord.ui.View):
             )
             return
 
-        # FIX: hủy auto close
         order_activity[self.code] = True
         if self.code in order_activity:
             del order_activity[self.code]
@@ -207,10 +226,20 @@ class BuyView(discord.ui.View):
     @discord.ui.button(label="🛒 MUA NGAY", style=discord.ButtonStyle.green)
     async def buy(self, interaction: discord.Interaction, button: discord.ui.Button):
 
-        if not anti_spam_buy(interaction.user.id):
+        user_id = interaction.user.id
+
+        if not anti_spam_buy(user_id):
 
             await interaction.response.send_message(
                 "⏳ Bạn đang tạo đơn quá nhanh. Vui lòng đợi vài giây.",
+                ephemeral=True
+            )
+            return
+
+        # ADD: giới hạn 3 đơn mỗi user
+        if user_id in user_orders and user_orders[user_id] >= 3:
+            await interaction.response.send_message(
+                "❌ Bạn chỉ được tạo tối đa 3 đơn cùng lúc.",
                 ephemeral=True
             )
             return
@@ -237,12 +266,16 @@ class BuyView(discord.ui.View):
             send_messages=True
         )
 
+        # ADD: tăng số đơn user
+        user_orders[user_id] = user_orders.get(user_id, 0) + 1
+
         embed = discord.Embed(
-            title="🧾 TẠO ĐƠN HÀNG",
+            title="# 💳 XÁC NHẬN THANH TOÁN BẰNG NGÂN HÀNG",
             description=(
                 f"📦 **Tên hàng:** {self.product}\n"
                 f"💰 **Số tiền:** {self.bank_price:,} VND\n"
                 f"🆔 **Mã đơn:** {order_code}\n\n"
+                
                 "👇 Chọn phương thức thanh toán"
             ),
             color=discord.Color.blue()
@@ -262,7 +295,7 @@ class BuyView(discord.ui.View):
         order_activity[order_code] = False
 
         asyncio.create_task(
-            auto_close_channel(channel, order_code)
+            auto_close_channel(channel, order_code, user_id)
         )
 
         await interaction.response.send_message(
@@ -368,6 +401,3 @@ class SellSystem(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(SellSystem(bot))
-
-
-
