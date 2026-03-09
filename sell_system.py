@@ -239,7 +239,7 @@ class BuyView(discord.ui.View):
         # ADD: giới hạn 3 đơn mỗi user
         if user_id in user_orders and user_orders[user_id] >= 3:
             await interaction.response.send_message(
-                "❌ Bạn chỉ được tạo tối đa 3 đơn cùng lúc.",
+                "🚫 Bạn đã đạt giới hạn 3 đơn hàng đang mở. Hãy hoàn thành hoặc hủy đơn trước.",
                 ephemeral=True
             )
             return
@@ -401,3 +401,4 @@ class SellSystem(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(SellSystem(bot))
+
