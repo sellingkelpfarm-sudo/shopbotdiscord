@@ -236,7 +236,6 @@ class BuyView(discord.ui.View):
             )
             return
 
-        # ADD: giới hạn 3 đơn mỗi user
         if user_id in user_orders and user_orders[user_id] >= 3:
             await interaction.response.send_message(
                 "🚫 Bạn đã đạt giới hạn 3 đơn hàng đang mở. Hãy hoàn thành hoặc hủy đơn trước.",
@@ -266,7 +265,6 @@ class BuyView(discord.ui.View):
             send_messages=True
         )
 
-        # ADD: tăng số đơn user
         user_orders[user_id] = user_orders.get(user_id, 0) + 1
 
         embed = discord.Embed(
@@ -275,7 +273,6 @@ class BuyView(discord.ui.View):
                 f"📦 **Tên hàng:** {self.product}\n"
                 f"💰 **Số tiền:** {self.bank_price:,} VND\n"
                 f"🆔 **Mã đơn:** {order_code}\n\n"
-                
                 "👇 Chọn phương thức thanh toán"
             ),
             color=discord.Color.blue()
@@ -335,9 +332,17 @@ class SellSystem(commands.Cog):
 
         order_code = order_code.upper()
 
-        if order_code not in bank_waiting:
+        found_code = None
+        for code in bank_waiting:
+            if code.upper() == order_code:
+                found_code = code
+                break
+
+        if found_code is None:
             await ctx.send("❌ Không tìm thấy mã đơn này.")
             return
+
+        order_code = found_code
 
         data = bank_waiting[order_code]
 
@@ -401,4 +406,3 @@ class SellSystem(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(SellSystem(bot))
-
