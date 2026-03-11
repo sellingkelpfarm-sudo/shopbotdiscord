@@ -320,6 +320,7 @@ class SellSystem(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
+
     @commands.command(name="sellbank")
     async def sellbank(self, ctx, bank_price: int, link: str):
 
@@ -340,32 +341,32 @@ class SellSystem(commands.Cog):
             view=BuyView(bank_price, product, link)
         )
 
-    @commands.Cog.listener()
-    async def on_message(self, message):
 
-        if message.channel.id != BANK_CHANNEL_ID:
+    @commands.command(name="dabank")
+    @commands.has_permissions(administrator=True)
+    async def dabank(self, ctx, order_code: str):
+
+        order_code = order_code.upper()
+
+        found_code = None
+        for code in bank_waiting:
+            if code.upper() == order_code:
+                found_code = code
+                break
+
+        if found_code is None:
+            await ctx.send("❌ Không tìm thấy mã đơn này.")
             return
 
-        if message.author.bot is False:
-            return
-
-        content = message.content.strip()
-
-        if len(content) < 6:
-            return
-
-        order_code = content[-6:].upper()
-
-        if order_code not in bank_waiting:
-            return
+        order_code = found_code
 
         data = bank_waiting[order_code]
 
         channel = self.bot.get_channel(data["channel"])
 
         embed = discord.Embed(
-            title="🎉 THANH TOÁN THÀNH CÔNG",
-            description="Đã xác nhận giao dịch!",
+            title="🎉 THANH TOÁN THÀNH CÔNG (ADMIN)",
+            description="Admin đã xác nhận giao dịch!",
             color=discord.Color.green()
         )
 
@@ -376,23 +377,9 @@ class SellSystem(commands.Cog):
 
         await channel.send(embed=embed)
 
-        guild = channel.guild
-        member = guild.get_member(data["user"])
-
-        log_channel = self.bot.get_channel(PAYMENT_LOG_CHANNEL_ID)
-
-        if log_channel and member:
-            await log_channel.send(
-                f"{member.mention} đã thanh toán đơn hàng **{data['product']}** với số tiền **{data['price']:,} VND**, Bạn đánh giá dịch vụ của chúng tớ tại #feed-back nhé!"
-            )
-
-        if member:
-            role = guild.get_role(PAID_ROLE_ID)
-            if role:
-                await member.add_roles(role)
-                asyncio.create_task(remove_role_later(member, role))
-
         del bank_waiting[order_code]
+
+        await ctx.send("✅ Đã xác nhận giao dịch thành công.")
 
 
 async def setup(bot):
