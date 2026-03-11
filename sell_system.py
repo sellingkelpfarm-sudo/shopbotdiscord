@@ -17,6 +17,7 @@ BANK_CHANNEL_ID = 1479440469120389221
 # --- CẤU HÌNH MỚI ---
 NOTIFY_CHANNEL_ID = 1481239066115571885  # ID kênh thông báo mua hàng thành công
 PAID_ROLE_ID = 1479550698982215852      # ID Role "Đã thanh toán"
+FEEDBACK_CHANNEL_ID = 1481245879607492769 # ID kênh #feed-back
 # --------------------
 
 ORDER_TIMEOUT = 900
@@ -313,16 +314,20 @@ class SellSystem(commands.Cog):
 
     async def handle_success_payment(self, guild, order_code, data):
         """Hàm xử lý các logic khi thanh toán thành công (Thông báo + Role)"""
-        channel = self.bot.get_channel(data["channel"])
         user = guild.get_member(data["user_id"])
         
         # 1. Gửi thông báo vào kênh chỉ định
         notify_channel = self.bot.get_channel(NOTIFY_CHANNEL_ID)
+        feedback_channel = self.bot.get_channel(FEEDBACK_CHANNEL_ID)
+        
         if notify_channel and user:
+            # Tạo mention cho kênh feedback hoặc dùng text nếu không tìm thấy kênh
+            fb_link = feedback_channel.mention if feedback_channel else "#feed-back"
+            
             await notify_channel.send(
                 f"{user.mention} đã thanh toán đơn hàng **{data['product']}** "
                 f"với số tiền **{data['price']:,} VND**, "
-                f"Bạn đánh giá dịch vụ của chúng tớ tại #feed-back nhé!"
+                f"Bạn đánh giá dịch vụ của chúng tớ tại {fb_link} nhé!"
             )
 
         # 2. Cấp Role và hẹn giờ xóa
