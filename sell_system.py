@@ -15,6 +15,12 @@ user_orders = {}
 
 BANK_CHANNEL_ID = 1479440469120389221
 
+# ADD: kênh thông báo thanh toán
+PAYMENT_LOG_CHANNEL_ID = 1481239066115571885
+
+# ADD: role đã thanh toán
+PAID_ROLE_ID = 1479550698982215852
+
 ORDER_TIMEOUT = 900
 
 
@@ -47,6 +53,15 @@ def anti_spam_buy(user_id):
     return True
 
 
+# ADD: tự xoá role sau 3 ngày
+async def remove_role_later(member, role):
+    await asyncio.sleep(259200)
+    try:
+        await member.remove_roles(role)
+    except:
+        pass
+
+
 # ======================
 # AUTO CLOSE CHANNEL (FIX)
 # ======================
@@ -71,7 +86,6 @@ async def auto_close_channel(channel, order_code, user_id):
     if order_code in order_activity:
         del order_activity[order_code]
 
-    # ADD: giảm số đơn user
     if user_id in user_orders:
         user_orders[user_id] -= 1
         if user_orders[user_id] <= 0:
@@ -94,7 +108,6 @@ class CancelConfirm(discord.ui.View):
         except:
             pass
 
-        # ADD: giảm số đơn user
         if user_id in user_orders:
             user_orders[user_id] -= 1
             if user_orders[user_id] <= 0:
@@ -193,7 +206,8 @@ class PaymentView(discord.ui.View):
             "channel": interaction.channel.id,
             "link": self.link,
             "product": self.product,
-            "price": self.bank_price
+            "price": self.bank_price,
+            "user": interaction.user.id
         }
 
         asyncio.create_task(bank_countdown(msg, self.code))
@@ -326,45 +340,6 @@ class SellSystem(commands.Cog):
             view=BuyView(bank_price, product, link)
         )
 
-    @commands.command(name="dabank")
-    @commands.has_permissions(administrator=True)
-    async def dabank(self, ctx, order_code: str):
-
-        order_code = order_code.upper()
-
-        found_code = None
-        for code in bank_waiting:
-            if code.upper() == order_code:
-                found_code = code
-                break
-
-        if found_code is None:
-            await ctx.send("❌ Không tìm thấy mã đơn này.")
-            return
-
-        order_code = found_code
-
-        data = bank_waiting[order_code]
-
-        channel = self.bot.get_channel(data["channel"])
-
-        embed = discord.Embed(
-            title="🎉 THANH TOÁN THÀNH CÔNG (ADMIN)",
-            description="Admin đã xác nhận giao dịch!",
-            color=discord.Color.green()
-        )
-
-        embed.add_field(name="📦 Tên hàng", value=data["product"], inline=False)
-        embed.add_field(name="💰 Số tiền", value=f"{data['price']:,} VND")
-        embed.add_field(name="🧾 Mã đơn", value=order_code)
-        embed.add_field(name="📥 Link tải", value=data["link"], inline=False)
-
-        await channel.send(embed=embed)
-
-        del bank_waiting[order_code]
-
-        await ctx.send("✅ Đã xác nhận giao dịch thành công.")
-
     @commands.Cog.listener()
     async def on_message(self, message):
 
@@ -400,6 +375,22 @@ class SellSystem(commands.Cog):
         embed.add_field(name="📥 Link tải", value=data["link"], inline=False)
 
         await channel.send(embed=embed)
+
+        guild = channel.guild
+        member = guild.get_member(data["user"])
+
+        log_channel = self.bot.get_channel(PAYMENT_LOG_CHANNEL_ID)
+
+        if log_channel and member:
+            await log_channel.send(
+                f"{member.mention} đã thanh toán đơn hàng **{data['product']}** với số tiền **{data['price']:,} VND**, Bạn đánh giá dịch vụ của chúng tớ tại #feed-back nhé!"
+            )
+
+        if member:
+            role = guild.get_role(PAID_ROLE_ID)
+            if role:
+                await member.add_roles(role)
+                asyncio.create_task(remove_role_later(member, role))
 
         del bank_waiting[order_code]
 
