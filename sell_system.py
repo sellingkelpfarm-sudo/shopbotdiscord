@@ -21,13 +21,15 @@ bank_waiting = {}
 order_activity = {}
 user_orders = {}
 
-# ===== DATABASE LOGIC (Giữ dữ liệu khi Railway Restart) =====
+# ===== DATABASE LOGIC (Lưu dữ liệu bền vững trên Railway) =====
 def init_db():
     conn = sqlite3.connect('bank_orders.db')
     c = conn.cursor()
+    # Lưu đơn hàng đang chờ thanh toán
     c.execute('''CREATE TABLE IF NOT EXISTS waiting_orders 
                  (code TEXT PRIMARY KEY, channel_id INTEGER, product TEXT, link TEXT, 
                   price INTEGER, user_id INTEGER)''')
+    # Lưu người dùng đang trong thời gian bảo hành
     c.execute('''CREATE TABLE IF NOT EXISTS warranty_users 
                  (user_id INTEGER, guild_id INTEGER, expiry_timestamp REAL)''')
     conn.commit()
@@ -36,7 +38,7 @@ def init_db():
 def db_save_waiting(code, channel_id, product, link, price, user_id):
     conn = sqlite3.connect('bank_orders.db')
     conn.execute("INSERT OR REPLACE INTO waiting_orders VALUES (?, ?, ?, ?, ?, ?)",
-                 (code, channel_id, product, link, price, user_id))
+                  (code, channel_id, product, link, price, user_id))
     conn.commit()
     conn.close()
 
@@ -46,7 +48,21 @@ def db_delete_waiting(code):
     conn.commit()
     conn.close()
 
+def db_load_waiting():
+    global bank_waiting
+    conn = sqlite3.connect('bank_orders.db')
+    c = conn.cursor()
+    c.execute("SELECT * FROM waiting_orders")
+    rows = c.fetchall()
+    for row in rows:
+        bank_waiting[row[0]] = {
+            "channel": row[1], "product": row[2], 
+            "link": row[3], "price": row[4], "user": row[5]
+        }
+    conn.close()
+
 init_db()
+db_load_waiting()
 
 def generate_code():
     while True:
@@ -68,22 +84,26 @@ def anti_spam_buy(user_id):
     buy_cooldowns[user_id] = now
     return True
 
-# Task tự động xóa role sau 3 ngày
+# Task tự động kiểm tra và xóa role sau 3 ngày
 @tasks.loop(hours=1)
-async def check_warranty_task():
+async def check_warranty_task(bot):
     now = datetime.now().timestamp()
     conn = sqlite3.connect('bank_orders.db')
     c = conn.cursor()
     c.execute("SELECT user_id, guild_id FROM warranty_users WHERE expiry_timestamp <= ?", (now,))
     expired = c.fetchall()
+    
     for u_id, g_id in expired:
         guild = bot.get_guild(g_id)
         if guild:
             member = guild.get_member(u_id)
             role = guild.get_role(PAID_ROLE_ID)
             if member and role:
-                try: await member.remove_roles(role)
+                try: 
+                    await member.remove_roles(role)
+                    print(f"Đã thu hồi role bảo hành của {member.name}")
                 except: pass
+                
     c.execute("DELETE FROM warranty_users WHERE expiry_timestamp <= ?", (now,))
     conn.commit()
     conn.close()
@@ -105,16 +125,19 @@ async def auto_close_channel(channel, order_code, user_id):
         if user_orders[user_id] <= 0: del user_orders[user_id]
 
 class CancelConfirm(discord.ui.View):
+    def __init__(self, user_id):
+        super().__init__(timeout=30)
+        self.user_id = user_id
+
     @discord.ui.button(label="✅ CÓ", style=discord.ButtonStyle.red)
     async def yes(self, interaction: discord.Interaction, button: discord.ui.Button):
-        user_id = interaction.user.id
         await interaction.response.send_message("⏳ Kênh sẽ bị xoá sau 5 giây.")
         await asyncio.sleep(5)
         try: await interaction.channel.delete()
         except: pass
-        if user_id in user_orders:
-            user_orders[user_id] -= 1
-            if user_orders[user_id] <= 0: del user_orders[user_id]
+        if self.user_id in user_orders:
+            user_orders[self.user_id] -= 1
+            if user_orders[self.user_id] <= 0: del user_orders[self.user_id]
 
     @discord.ui.button(label="❌ KHÔNG", style=discord.ButtonStyle.green)
     async def no(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -151,7 +174,6 @@ class PaymentView(discord.ui.View):
         order_activity[self.code] = True
         qr = f"https://img.vietqr.io/image/MB-0764495919-compact2.png?amount={self.bank_price}&addInfo={self.code}"
         
-        # GIỮ NGUYÊN MẪU EMBED CŨ CỦA BẠN
         embed = discord.Embed(
             title="💳 THANH TOÁN CHUYỂN KHOẢN",
             description=(
@@ -175,7 +197,7 @@ class PaymentView(discord.ui.View):
     @discord.ui.button(label="❌ HỦY ĐƠN", style=discord.ButtonStyle.red)
     async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
         embed = discord.Embed(title="⚠ XÁC NHẬN HỦY ĐƠN", description="BẠN CÓ CHẮC HỦY ĐƠN HÀNG CHỨ?", color=discord.Color.orange())
-        await interaction.response.send_message(embed=embed, view=CancelConfirm())
+        await interaction.response.send_message(embed=embed, view=CancelConfirm(interaction.user.id))
 
 class BuyView(discord.ui.View):
     def __init__(self, bank_price, product, link):
@@ -201,7 +223,6 @@ class BuyView(discord.ui.View):
         
         user_orders[user_id] = user_orders.get(user_id, 0) + 1
         
-        # GIỮ NGUYÊN MẪU EMBED CŨ CỦA BẠN
         embed = discord.Embed(
             title="# 💳 XÁC NHẬN THANH TOÁN BẰNG NGÂN HÀNG",
             description=(
@@ -224,7 +245,6 @@ class SellSystem(commands.Cog):
     @commands.command(name="sellbank")
     async def sellbank(self, ctx, bank_price: int, link: str):
         product = ctx.channel.name
-        # GIỮ NGUYÊN MẪU EMBED CŨ CỦA BẠN
         embed = discord.Embed(
             title="🛒 THANH TOÁN BẰNG CÁCH CHUYỂN KHOẢN NGÂN HÀNG",
             description=(
@@ -248,7 +268,7 @@ class SellSystem(commands.Cog):
         user_id = data["user"]
         member = ctx.guild.get_member(user_id)
 
-        # 1. Gửi thông báo thành công tại Ticket (GIỮ NGUYÊN MẪU CŨ CỦA BẠN)
+        # 1. Gửi thông báo thành công tại Ticket
         channel = self.bot.get_channel(data["channel"])
         embed_tkt = discord.Embed(title="🎉 THANH TOÁN THÀNH CÔNG (ADMIN)", description="Admin đã xác nhận giao dịch!", color=discord.Color.green())
         embed_tkt.add_field(name="📦 Tên hàng", value=data["product"], inline=False)
@@ -262,21 +282,23 @@ class SellSystem(commands.Cog):
         if log_channel:
             await log_channel.send(f"<@{user_id}> đã thanh toán đơn hàng **{data['product']}** với số tiền **{data['price']:,} VND**, Bạn đánh giá dịch vụ của chúng tớ tại {FEEDBACK_CHANNEL_MENTION} nhé!")
 
-        # 3. Cấp role bảo hành & Xử lý DM
+        # 3. Cấp role bảo hành & Xử lý DM & Lưu Database Bảo hành
         if member:
             role = ctx.guild.get_role(PAID_ROLE_ID)
             if role:
-                await member.add_roles(role)
-                # Lưu vào DB để check xóa sau 3 ngày
+                try: await member.add_roles(role)
+                except: pass
+                
+                # Tính thời gian hết hạn (3 ngày sau)
                 expiry = (datetime.now() + timedelta(days=3)).timestamp()
                 conn = sqlite3.connect('bank_orders.db')
-                conn.execute("INSERT INTO warranty_users VALUES (?, ?, ?)", (user_id, ctx.guild.id, expiry))
+                conn.execute("INSERT OR REPLACE INTO warranty_users VALUES (?, ?, ?)", (user_id, ctx.guild.id, expiry))
                 conn.commit()
                 conn.close()
 
             # Gửi tin nhắn DM theo mẫu yêu cầu
             dm_text = (f"Chúc mừng bạn đã mua thành công đơn hàng **{data['product']}** với số tiền **{data['price']:,} VND**. "
-                       f"Bạn có 3 ngày bảo hành từ LoTuss's Schematic Shop, sau 3 ngày bảo hành sẽ hết hạn! "
+                       f"Bạn có **3 ngày bảo hành** từ ***LoTuss's Schematic Shop***, sau **3 ngày bảo hành sẽ hết hạn!** "
                        f"Cảm ơn bạn đã tin tưởng và sử dụng dịch vụ của chúng tôi nhé!")
             try: await member.send(dm_text)
             except: pass
@@ -289,4 +311,4 @@ class SellSystem(commands.Cog):
 async def setup(bot):
     await bot.add_cog(SellSystem(bot))
     if not check_warranty_task.is_running():
-        check_warranty_task.start()
+        check_warranty_task.start(bot)
