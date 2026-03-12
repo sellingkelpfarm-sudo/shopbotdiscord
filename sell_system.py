@@ -106,10 +106,15 @@ class VoucherModal(discord.ui.Modal, title='🎫 NHẬP MÃ GIẢM GIÁ'):
         invite_cog = self.bot.get_cog("InviteSystem")
         if invite_cog:
             percent, new_price = await invite_cog.process_voucher_logic(interaction, self.voucher_input.value, self.order_code)
+            
+            # Kiểm tra nếu người dùng đã sử dụng mã này rồi
+            if percent == "ALREADY_USED":
+                return await interaction.response.send_message("❌ Bạn đã sử dụng mã giảm giá này cho một đơn hàng trước đó rồi! Mỗi người chỉ được dùng mã này 1 lần.", ephemeral=True)
+            
             if percent is None:
                 voucher_attempts[user_id] = voucher_attempts.get(user_id, 0) + 1
                 remain = 3 - voucher_attempts[user_id]
-                msg = f"❌ Mã không chính xác! Bạn còn {remain} lần thử." if remain > 0 else "🚫 Bạn đã hết lượt thử voucher!"
+                msg = f"❌ Mã không chính xác hoặc đã hết hạn! Bạn còn {remain} lần thử." if remain > 0 else "🚫 Bạn đã hết lượt thử voucher!"
                 await interaction.response.send_message(msg, ephemeral=True)
             else:
                 voucher_attempts[user_id] = 0
@@ -354,14 +359,21 @@ class SellSystem(commands.Cog):
         data = bank_waiting[order_code]
         user_id, member = data["user"], ctx.guild.get_member(data["user"])
         channel = self.bot.get_channel(data["channel"])
-        embed_tkt = discord.Embed(title="🎉 THANH TOÁN THÀNH CÔNG (ADMIN)", description="Admin đã xác nhận giao dịch!", color=discord.Color.green())
-        embed_tkt.add_field(name="📦 Tên hàng", value=data["product"], inline=False)
-        embed_tkt.add_field(name="💰 Số tiền", value=f"{data['price']:,} VND")
-        embed_tkt.add_field(name="🆔 Mã đơn", value=order_code)
-        embed_tkt.add_field(name="📥 Link tải", value=f"[Nhấp vào đây]({data['link']})", inline=False)
-        if channel: await channel.send(embed=embed_tkt)
+        
+        # Đồng bộ Embed thông báo thành công
+        embed_tkt = discord.Embed(title="🎉 THANH TOÁN THÀNH CÔNG (ADMIN)", description="Admin đã xác nhận giao dịch của bạn!", color=discord.Color.green())
+        embed_tkt.add_field(name="📦 Tên hàng", value=f"{data['product']}", inline=False)
+        embed_tkt.add_field(name="💰 Số tiền", value=f"{data['price']:,} VND", inline=True)
+        embed_tkt.add_field(name="🆔 Mã đơn", value=f"{order_code}", inline=True)
+        embed_tkt.add_field(name="📥 Link tải", value=f"[Nhấp vào đây để tải]({data['link']})", inline=False)
+        
+        if channel:
+            try: await channel.send(content=f"<@{user_id}>", embed=embed_tkt)
+            except: pass
+
         log_ch = self.bot.get_channel(PAYMENT_LOG_CHANNEL_ID)
         if log_ch: await log_ch.send(f"<@{user_id}> đã thanh toán đơn hàng **{data['product']}** với số tiền **{data['price']:,} VND**, Bạn đánh giá dịch vụ của chúng tớ tại {FEEDBACK_CHANNEL_MENTION} nhé!")
+        
         if member:
             role = ctx.guild.get_role(PAID_ROLE_ID)
             if role:
@@ -371,16 +383,16 @@ class SellSystem(commands.Cog):
                 conn = sqlite3.connect('bank_orders.db')
                 conn.execute("INSERT OR REPLACE INTO warranty_users VALUES (?, ?, ?)", (user_id, ctx.guild.id, expiry))
                 conn.commit(); conn.close()
-            try: await member.send(f"Chúc mừng bạn đã mua thành công đơn hàng **{data['product']}** với số tiền **{data['price']:,} VND**. Bạn có **3 ngày bảo hành** từ ***LoTuss's Schematic Shop***!")
+            try: await member.send(f"Chúc mừng bạn đã mua thành công đơn hàng **{data['product']}** với số tiền **{data['price']:,} VND**. Bạn có **3 ngày bảo hành** từ ***LoTuss's Schematic Shop***. Link tải: {data['link']}")
             except: pass
             invite_cog = self.bot.get_cog("InviteSystem")
             if invite_cog: await invite_cog.give_voucher_logic(member, data['product'], data['price'], ctx.guild)
+        
         db_delete_waiting(order_code)
-        del bank_waiting[order_code]
+        if order_code in bank_waiting: del bank_waiting[order_code]
         if user_id in user_orders: user_orders[user_id] = max(0, user_orders[user_id] - 1)
-        await ctx.send("✅ Giao dịch thành công.")
+        await ctx.send(f"✅ Đã xác nhận đơn `{order_code}` thành công.")
 
 async def setup(bot):
     await bot.add_cog(SellSystem(bot))
     if not check_warranty_task.is_running(): check_warranty_task.start(bot)
-    
