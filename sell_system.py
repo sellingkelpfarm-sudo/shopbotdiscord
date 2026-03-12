@@ -28,16 +28,16 @@ def init_db():
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS waiting_orders 
                  (code TEXT PRIMARY KEY, channel_id INTEGER, product TEXT, link TEXT, 
-                  price INTEGER, user_id INTEGER)''')
+                  price INTEGER, user_id INTEGER, voucher_applied INTEGER DEFAULT 0)''')
     c.execute('''CREATE TABLE IF NOT EXISTS warranty_users 
                  (user_id INTEGER, guild_id INTEGER, expiry_timestamp REAL)''')
     conn.commit()
     conn.close()
 
-def db_save_waiting(code, channel_id, product, link, price, user_id):
+def db_save_waiting(code, channel_id, product, link, price, user_id, voucher_applied=0):
     conn = sqlite3.connect('bank_orders.db')
-    conn.execute("INSERT OR REPLACE INTO waiting_orders VALUES (?, ?, ?, ?, ?, ?)",
-                  (code, channel_id, product, link, price, user_id))
+    conn.execute("INSERT OR REPLACE INTO waiting_orders VALUES (?, ?, ?, ?, ?, ?, ?)",
+                  (code, channel_id, product, link, price, user_id, voucher_applied))
     conn.commit()
     conn.close()
 
@@ -56,7 +56,8 @@ def db_load_waiting():
     for row in rows:
         bank_waiting[row[0]] = {
             "channel": row[1], "product": row[2], 
-            "link": row[3], "price": row[4], "user": row[5]
+            "link": row[3], "price": row[4], "user": row[5],
+            "voucher_applied": bool(row[6])
         }
     conn.close()
 
@@ -100,6 +101,11 @@ class VoucherModal(discord.ui.Modal, title='🎫 NHẬP MÃ GIẢM GIÁ'):
 
     async def on_submit(self, interaction: discord.Interaction):
         user_id = interaction.user.id
+        
+        # Kiểm tra nếu đơn này đã dùng voucher rồi
+        if bank_waiting.get(self.order_code, {}).get('voucher_applied'):
+            return await interaction.response.send_message("❌ Đơn hàng này đã áp dụng mã giảm giá rồi! Mỗi đơn chỉ được dùng 1 voucher.", ephemeral=True)
+
         if voucher_attempts.get(user_id, 0) >= 3:
             return await interaction.response.send_message("🚫 Bạn đã nhập sai quá 3 lần. Chức năng voucher đã bị khóa cho đơn này!", ephemeral=True)
 
@@ -107,7 +113,6 @@ class VoucherModal(discord.ui.Modal, title='🎫 NHẬP MÃ GIẢM GIÁ'):
         if invite_cog:
             percent, new_price = await invite_cog.process_voucher_logic(interaction, self.voucher_input.value, self.order_code)
             
-            # Kiểm tra nếu người dùng đã sử dụng mã này rồi
             if percent == "ALREADY_USED":
                 return await interaction.response.send_message("❌ Bạn đã sử dụng mã giảm giá này cho một đơn hàng trước đó rồi! Mỗi người chỉ được dùng mã này 1 lần.", ephemeral=True)
             
@@ -118,6 +123,10 @@ class VoucherModal(discord.ui.Modal, title='🎫 NHẬP MÃ GIẢM GIÁ'):
                 await interaction.response.send_message(msg, ephemeral=True)
             else:
                 voucher_attempts[user_id] = 0
+                # Cập nhật trạng thái đã dùng voucher vào database
+                data = bank_waiting[self.order_code]
+                db_save_waiting(self.order_code, data['channel'], data['product'], data['link'], new_price, user_id, 1)
+                
                 await interaction.response.send_message(f"✅ Đã áp dụng mã thành công! Giảm **{percent}%**. Giá mới: **{new_price:,} VND**. Vui lòng nhấn lại nút **CHUYỂN KHOẢN** để nhận mã QR mới.", ephemeral=True)
         else:
             await interaction.response.send_message("❌ Hệ thống Voucher đang gặp sự cố.", ephemeral=True)
@@ -219,7 +228,7 @@ class PaymentView(discord.ui.View):
                 f"💰 **Số tiền:** {current_price:,} VND\n"
                 f"🧾 **Mã đơn:** {self.code}\n\n"
                 f"📥 **Nội dung CK:** `{self.code}`\n"
-                f"#lưu ý: nội dung chuyển khoản không được chỉnh sửa! | "
+                f"**Lưu ý:** Nội dung chuyển khoản không được chỉnh sửa! | "
                 f"Và vui lòng chụp bill thanh toán rõ lên trên này nếu gặp lỗi thì admin sẽ giải quyết sớm!"
             ),
             color=discord.Color.green()
@@ -229,8 +238,9 @@ class PaymentView(discord.ui.View):
         msg = await interaction.original_response()
         
         if self.code not in bank_waiting:
-            bank_waiting[self.code] = {"channel": interaction.channel.id, "link": self.link, "product": self.product, "price": current_price, "user": interaction.user.id}
-            db_save_waiting(self.code, interaction.channel.id, self.product, self.link, current_price, interaction.user.id)
+            is_applied = False
+            bank_waiting[self.code] = {"channel": interaction.channel.id, "link": self.link, "product": self.product, "price": current_price, "user": interaction.user.id, "voucher_applied": is_applied}
+            db_save_waiting(self.code, interaction.channel.id, self.product, self.link, current_price, interaction.user.id, 1 if is_applied else 0)
         
         asyncio.create_task(bank_countdown(msg, self.code))
 
@@ -265,8 +275,8 @@ class BuyView(discord.ui.View):
         await channel.set_permissions(interaction.user, view_channel=True, send_messages=True)
         user_orders[user_id] = user_orders.get(user_id, 0) + 1
         
-        bank_waiting[order_code] = {"channel": channel.id, "link": self.link, "product": self.product, "price": self.bank_price, "user": interaction.user.id}
-        db_save_waiting(order_code, channel.id, self.product, self.link, self.bank_price, interaction.user.id)
+        bank_waiting[order_code] = {"channel": channel.id, "link": self.link, "product": self.product, "price": self.bank_price, "user": interaction.user.id, "voucher_applied": False}
+        db_save_waiting(order_code, channel.id, self.product, self.link, self.bank_price, interaction.user.id, 0)
 
         embed = discord.Embed(
             title="# 💳 XÁC NHẬN THANH TOÁN BẰNG NGÂN HÀNG",
@@ -360,7 +370,6 @@ class SellSystem(commands.Cog):
         user_id, member = data["user"], ctx.guild.get_member(data["user"])
         channel = self.bot.get_channel(data["channel"])
         
-        # Đồng bộ Embed thông báo thành công
         embed_tkt = discord.Embed(title="🎉 THANH TOÁN THÀNH CÔNG (ADMIN)", description="Admin đã xác nhận giao dịch của bạn!", color=discord.Color.green())
         embed_tkt.add_field(name="📦 Tên hàng", value=f"{data['product']}", inline=False)
         embed_tkt.add_field(name="💰 Số tiền", value=f"{data['price']:,} VND", inline=True)
@@ -396,4 +405,3 @@ class SellSystem(commands.Cog):
 async def setup(bot):
     await bot.add_cog(SellSystem(bot))
     if not check_warranty_task.is_running(): check_warranty_task.start(bot)
-
