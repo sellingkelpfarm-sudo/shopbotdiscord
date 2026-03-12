@@ -7,6 +7,7 @@ import sys
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
+intents.presences = True # Bật thêm presence nếu cần theo dõi trạng thái
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
@@ -15,6 +16,8 @@ async def load_extensions():
     extensions = ["sell_system", "invite_system", "MenuRole"]
     for ext in extensions:
         try:
+            # Nếu file nằm trong cùng thư mục, dùng ext trực tiếp
+            # Nếu nằm trong thư mục cogs, hãy đổi thành f"cogs.{ext}"
             await bot.load_extension(ext)
             print(f"✅ Đã nạp thành công: {ext}")
         except Exception as e:
@@ -27,34 +30,28 @@ async def setup_hook():
 
 @bot.event
 async def on_ready():
-    # Khôi phục dữ liệu đơn hàng từ Database vào RAM của sell_system
-    # Kiểm tra xem sell_system đã được nạp vào sys.modules chưa
+    # Thông báo trạng thái nạp dữ liệu từ Cog
     sell_mod = sys.modules.get('sell_system')
-    if sell_mod:
-        try:
-            conn = sqlite3.connect('bank_orders.db')
-            c = conn.cursor()
-            # Đảm bảo bảng tồn tại trước khi lấy dữ liệu
-            c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='waiting_orders'")
-            if c.fetchone():
-                c.execute("SELECT code, channel_id, product, link, price, user_id FROM waiting_orders")
-                rows = c.fetchall()
-                for row in rows:
-                    sell_mod.bank_waiting[row[0]] = {
-                        "channel": row[1], "product": row[2], 
-                        "link": row[3], "price": row[4], "user": row[5]
-                    }
-                print(f"📦 Đã khôi phục {len(rows)} đơn hàng vào RAM.")
-            conn.close()
-        except Exception as e:
-            print(f"⚠️ Lỗi khôi phục đơn hàng: {e}")
+    if sell_mod and hasattr(sell_mod, 'bank_waiting'):
+        count = len(sell_mod.bank_waiting)
+        print(f"📦 Hệ thống bán hàng đã sẵn sàng. Đang quản lý {count} đơn hàng trong RAM.")
+    
+    # Cập nhật trạng thái cho Bot (Ví dụ: Đang xem Shop)
+    await bot.change_presence(activity=discord.Game(name="LoTuss's Shop"))
     
     print(f"🚀 Bot đã sẵn sàng: {bot.user}")
+    print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 # --- CHẠY BOT ---
+# Đảm bảo bạn đã set TOKEN trong Environment Variables hoặc thay trực tiếp vào đây
 TOKEN = os.getenv("TOKEN")
+
 if TOKEN:
-    bot.run(TOKEN)
+    try:
+        bot.run(TOKEN)
+    except discord.errors.LoginFailure:
+        print("❌ TOKEN không hợp lệ. Vui lòng kiểm tra lại.")
+    except Exception as e:
+        print(f"❌ Lỗi khởi động: {e}")
 else:
     print("❌ Không tìm thấy TOKEN trong môi trường (Environment Variable).")
-    
