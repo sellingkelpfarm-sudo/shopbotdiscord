@@ -16,6 +16,9 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS admin_vouchers 
                  (code TEXT PRIMARY KEY, percent INTEGER, max_uses INTEGER, 
                   current_uses INTEGER DEFAULT 0, expiry_date TEXT)''')
+    # Bảng mới để lưu vết người dùng đã sử dụng mã admin
+    c.execute('''CREATE TABLE IF NOT EXISTS admin_voucher_logs 
+                 (code TEXT, user_id INTEGER)''')
     c.execute('''CREATE TABLE IF NOT EXISTS leaderboard 
                  (user_id INTEGER PRIMARY KEY, total_spent INTEGER DEFAULT 0, order_count INTEGER DEFAULT 0)''')
     c.execute('''CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value INTEGER)''')
@@ -79,39 +82,48 @@ class InviteSystem(commands.Cog):
     async def process_voucher_logic(self, interaction, code, order_code):
         import sell_system # Import tại đây để tránh vòng lặp import (Circular Import)
         code = code.upper()
+        user_id = interaction.user.id
         now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         conn = sqlite3.connect('bank_orders.db')
         c = conn.cursor()
         
         # 1. Kiểm tra mã admin tạo
         c.execute("SELECT percent, max_uses, current_uses FROM admin_vouchers WHERE code = ? AND expiry_date > ?", (code, now))
-        res = c.fetchone()
+        res_admin = c.fetchone()
         
-        # 2. Nếu không có, kiểm tra mã cá nhân (mã tặng lần đầu)
-        if not res:
-            c.execute("SELECT percent, used FROM vouchers WHERE user_id = ? AND code = ? AND expiry_date > ? AND used = 0", 
-                      (interaction.user.id, code, now))
-            res_personal = c.fetchone()
-            if res_personal:
-                percent = res_personal[0]
+        # Nếu tìm thấy mã admin, kiểm tra xem người này đã dùng chưa
+        if res_admin:
+            c.execute("SELECT 1 FROM admin_voucher_logs WHERE code = ? AND user_id = ?", (code, user_id))
+            if c.fetchone():
+                conn.close()
+                return "ALREADY_USED", None # Trả về trạng thái đã dùng
+            
+            percent, max_uses, current_uses = res_admin
+            if current_uses < max_uses:
                 if order_code in sell_system.bank_waiting:
                     old_price = sell_system.bank_waiting[order_code]['price']
                     new_price = int(old_price * (1 - percent/100))
                     sell_system.bank_waiting[order_code]['price'] = new_price
-                    # Đánh dấu đã sử dụng mã cá nhân
-                    conn.execute("UPDATE vouchers SET used = 1 WHERE user_id = ? AND code = ?", (interaction.user.id, code))
+                    
+                    # Cập nhật số lượt dùng và lưu vết người dùng
+                    conn.execute("UPDATE admin_vouchers SET current_uses = current_uses + 1 WHERE code = ?", (code,))
+                    conn.execute("INSERT INTO admin_voucher_logs (code, user_id) VALUES (?, ?)", (code, user_id))
                     conn.commit()
                     conn.close()
                     return percent, new_price
 
-        # 3. Xử lý nếu là mã admin
-        if res and res[2] < res[1]:
-            percent = res[0]
+        # 2. Nếu không phải mã admin, kiểm tra mã cá nhân (mã tặng lần đầu)
+        c.execute("SELECT percent, used FROM vouchers WHERE user_id = ? AND code = ? AND expiry_date > ? AND used = 0", 
+                  (user_id, code, now))
+        res_personal = c.fetchone()
+        if res_personal:
+            percent = res_personal[0]
             if order_code in sell_system.bank_waiting:
                 old_price = sell_system.bank_waiting[order_code]['price']
                 new_price = int(old_price * (1 - percent/100))
                 sell_system.bank_waiting[order_code]['price'] = new_price
-                conn.execute("UPDATE admin_vouchers SET current_uses = current_uses + 1 WHERE code = ?", (code,))
+                # Đánh dấu đã sử dụng mã cá nhân
+                conn.execute("UPDATE vouchers SET used = 1 WHERE user_id = ? AND code = ?", (user_id, code))
                 conn.commit()
                 conn.close()
                 return percent, new_price
