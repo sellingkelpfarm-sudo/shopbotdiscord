@@ -30,7 +30,8 @@ class InviteSystem(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.invites = {}
-        self.update_top_task.start()
+        if not self.update_top_task.is_running():
+            self.update_top_task.start()
 
     def cog_unload(self):
         self.update_top_task.cancel()
@@ -38,8 +39,10 @@ class InviteSystem(commands.Cog):
     @commands.Cog.listener()
     async def on_ready(self):
         for guild in self.bot.guilds:
-            try: self.invites[guild.id] = await guild.invites()
-            except: pass
+            try: 
+                self.invites[guild.id] = await guild.invites()
+            except: 
+                pass
 
     @commands.command(name="createvoucher")
     @commands.has_permissions(administrator=True)
@@ -69,15 +72,59 @@ class InviteSystem(commands.Cog):
                 for new_invite in new_invites:
                     if invite.code == new_invite.code and invite.uses < new_invite.uses:
                         return invite.inviter
-        except: return None
+        except: 
+            return None
 
-    # --- HÀM QUAN TRỌNG: XỬ LÝ TẶNG VOUCHER & LEADERBOARD ---
+    # --- HÀM XỬ LÝ VOUCHER KHI NGƯỜI DÙNG NHẬP MÃ ---
+    async def process_voucher_logic(self, interaction, code, order_code):
+        import sell_system # Import tại đây để tránh vòng lặp import (Circular Import)
+        code = code.upper()
+        now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        conn = sqlite3.connect('bank_orders.db')
+        c = conn.cursor()
+        
+        # 1. Kiểm tra mã admin tạo
+        c.execute("SELECT percent, max_uses, current_uses FROM admin_vouchers WHERE code = ? AND expiry_date > ?", (code, now))
+        res = c.fetchone()
+        
+        # 2. Nếu không có, kiểm tra mã cá nhân (mã tặng lần đầu)
+        if not res:
+            c.execute("SELECT percent, used FROM vouchers WHERE user_id = ? AND code = ? AND expiry_date > ? AND used = 0", 
+                      (interaction.user.id, code, now))
+            res_personal = c.fetchone()
+            if res_personal:
+                percent = res_personal[0]
+                if order_code in sell_system.bank_waiting:
+                    old_price = sell_system.bank_waiting[order_code]['price']
+                    new_price = int(old_price * (1 - percent/100))
+                    sell_system.bank_waiting[order_code]['price'] = new_price
+                    # Đánh dấu đã sử dụng mã cá nhân
+                    conn.execute("UPDATE vouchers SET used = 1 WHERE user_id = ? AND code = ?", (interaction.user.id, code))
+                    conn.commit()
+                    conn.close()
+                    return percent, new_price
+
+        # 3. Xử lý nếu là mã admin
+        if res and res[2] < res[1]:
+            percent = res[0]
+            if order_code in sell_system.bank_waiting:
+                old_price = sell_system.bank_waiting[order_code]['price']
+                new_price = int(old_price * (1 - percent/100))
+                sell_system.bank_waiting[order_code]['price'] = new_price
+                conn.execute("UPDATE admin_vouchers SET current_uses = current_uses + 1 WHERE code = ?", (code,))
+                conn.commit()
+                conn.close()
+                return percent, new_price
+        
+        conn.close()
+        return None, None
+
+    # --- HÀM TẶNG VOUCHER & CẬP NHẬT BXH ---
     async def give_voucher_logic(self, member, product_name, amount, guild):
         conn = sqlite3.connect('bank_orders.db')
         c = conn.cursor()
         user_id = member.id
         
-        # Lấy số đơn hàng cũ trước khi cập nhật
         c.execute("SELECT order_count FROM leaderboard WHERE user_id = ?", (user_id,))
         res = c.fetchone()
         old_order_count = res[0] if res else 0
@@ -88,7 +135,7 @@ class InviteSystem(commands.Cog):
                      (user_id, amount, amount))
         conn.commit()
 
-        # Nếu là đơn hàng ĐẦU TIÊN (old_order_count == 0), tặng voucher 20%
+        # Tặng mã 20% cho đơn ĐẦU TIÊN
         if old_order_count == 0:
             voucher_code = self.generate_voucher()
             expiry_str = (datetime.now() + timedelta(days=7)).strftime('%Y-%m-%d %H:%M:%S')
@@ -99,10 +146,11 @@ class InviteSystem(commands.Cog):
 
             try:
                 embed = discord.Embed(title="🎁 QUÀ TẶNG LẦN ĐẦU MUA HÀNG", color=0x2ecc71)
-                embed.description = f"Cảm ơn bạn đã tin dùng dịch vụ! Vì đây là đơn hàng đầu tiên, shop tặng bạn 1 mã giảm giá cho lần sau."
-                embed.add_field(name="🎫 Mã Voucher (Giảm 20%)", value=f"`{voucher_code}`", inline=False)
+                embed.description = f"Cảm ơn bạn đã tin dùng dịch vụ của ***LoTuss's Shop***!\nVì đây là đơn hàng đầu tiên, shop tặng bạn 1 mã giảm giá 20% cho lần sau."
+                embed.add_field(name="🎫 Mã Voucher", value=f"`{voucher_code}`", inline=True)
+                embed.add_field(name="📉 Giảm giá", value="**20%**", inline=True)
                 embed.add_field(name="⏰ Hạn dùng", value="7 Ngày", inline=True)
-                embed.set_footer(text="Sử dụng mã này trong lần mua tới nhé!")
+                embed.set_footer(text="Nhấn 'NHẬP VOUCHER' trong đơn hàng tới để áp dụng nhé!")
                 await member.send(embed=embed)
             except:
                 pass
@@ -111,8 +159,27 @@ class InviteSystem(commands.Cog):
 
     @tasks.loop(hours=1)
     async def update_top_task(self):
-        # (Giữ nguyên logic update_top của bạn)
-        pass
+        await self.bot.wait_until_ready()
+        conn = sqlite3.connect('bank_orders.db')
+        c = conn.cursor()
+        c.execute("SELECT value FROM config WHERE key = 'top_channel'")
+        ch_id = c.fetchone()
+        if not ch_id: 
+            return
+        
+        c.execute("SELECT user_id, total_spent FROM leaderboard ORDER BY total_spent DESC LIMIT 10")
+        rows = c.fetchall()
+        
+        embed = discord.Embed(title="🏆 TOP ĐẠI GIA - CHI TIÊU NHIỀU NHẤT", color=0xffd700)
+        desc = ""
+        for i, r in enumerate(rows):
+            desc += f"#{i+1} <@{r[0]}> - `{r[1]:,} VND`\n"
+        embed.description = desc or "Chưa có dữ liệu."
+        
+        channel = self.bot.get_channel(ch_id[0])
+        if channel: 
+            await channel.send(embed=embed)
+        conn.close()
 
     @commands.command(name="settop")
     @commands.has_permissions(administrator=True)
