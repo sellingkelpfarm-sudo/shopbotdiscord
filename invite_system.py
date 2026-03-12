@@ -5,6 +5,8 @@ import random
 import string
 import asyncio
 import os
+# Import utils để lấy thời gian chuẩn UTC cho timestamp
+from discord import utils
 from datetime import datetime, timedelta
 
 # ID Kênh thông báo chung
@@ -88,7 +90,10 @@ class InviteSystem(commands.Cog):
         embed.add_field(name="📉 Giảm giá", value=f"{percent}%", inline=True)
         embed.add_field(name="💰 Giá cũ", value=f"{old_price:,} VND", inline=True)
         embed.add_field(name="✅ Giá sau giảm", value=f"**{new_price:,} VND**", inline=True)
-        embed.set_timestamp()
+        
+        # SỬA LỖI: Thay embed.set_timestamp() bằng thuộc tính timestamp
+        embed.timestamp = discord.utils.utcnow()
+        
         try: await channel.send(embed=embed)
         except: pass
 
@@ -99,18 +104,15 @@ class InviteSystem(commands.Cog):
         conn = sqlite3.connect('bank_orders.db')
         c = conn.cursor()
 
-        # Kiểm tra nếu đơn hàng đã dùng voucher rồi thì không cho dùng nữa
         if order_code in sell_system.bank_waiting:
             if sell_system.bank_waiting[order_code].get('voucher_applied'):
                 conn.close()
                 return "ALREADY_USED", None
 
-        # Kiểm tra Voucher Admin
         c.execute("SELECT percent, max_uses, current_uses FROM admin_vouchers WHERE code = ? AND expiry_date > ?", (code, now))
         res = c.fetchone()
         
         if not res:
-            # Kiểm tra Voucher cá nhân
             c.execute("SELECT percent, used FROM vouchers WHERE user_id = ? AND code = ? AND expiry_date > ? AND used = 0", 
                       (interaction.user.id, code, now))
             res_personal = c.fetchone()
@@ -124,7 +126,6 @@ class InviteSystem(commands.Cog):
                     conn.execute("UPDATE vouchers SET used = 1 WHERE user_id = ? AND code = ?", (interaction.user.id, code))
                     conn.commit()
                     conn.close()
-                    # Gửi Webhook
                     await self.send_voucher_webhook(interaction.user, code, percent, old_price, new_price, order_code, "Voucher Cá Nhân")
                     return percent, new_price
         
@@ -138,7 +139,6 @@ class InviteSystem(commands.Cog):
                 conn.execute("UPDATE admin_vouchers SET current_uses = current_uses + 1 WHERE code = ?", (code,))
                 conn.commit()
                 conn.close()
-                # Gửi Webhook
                 await self.send_voucher_webhook(interaction.user, code, percent, old_price, new_price, order_code, "Voucher Admin (Chung)")
                 return percent, new_price
                 
@@ -167,11 +167,9 @@ class InviteSystem(commands.Cog):
 
             if aff_res:
                 inviter_id = aff_res[0]
-                # Kiểm tra giới hạn 3 voucher cho người mời
                 c.execute("SELECT COUNT(*) FROM affiliate_rewards WHERE inviter_id = ? AND rewarded = 1", (inviter_id,))
                 vouchers_sent = c.fetchone()[0]
 
-                # Tặng cho người mua
                 v_code_buyer = self.generate_voucher()
                 conn.execute("INSERT INTO vouchers (user_id, code, percent, used, expiry_date) VALUES (?, ?, 20, 0, ?)", (user_id, v_code_buyer, expiry_str))
                 conn.execute("UPDATE affiliate_rewards SET rewarded = 1 WHERE invited_id = ?", (user_id,))
@@ -187,7 +185,6 @@ class InviteSystem(commands.Cog):
                     await member.send(embed=embed)
                 except: pass
 
-                # Tặng cho người mời nếu chưa quá 3 lần
                 if vouchers_sent < 3:
                     v_code_inviter = self.generate_voucher()
                     conn.execute("INSERT INTO vouchers (user_id, code, percent, used, expiry_date) VALUES (?, ?, 20, 0, ?)", (inviter_id, v_code_inviter, expiry_str))
@@ -207,7 +204,6 @@ class InviteSystem(commands.Cog):
                     if notif_channel:
                         await notif_channel.send(f"🎊 **{member.mention}** (được mời) đã thanh toán thành công đơn đầu!\n🎁 Người mua nhận được mã **20%**.")
             else:
-                # Đơn đầu bình thường
                 voucher_code = self.generate_voucher()
                 expiry_str = (datetime.now() + timedelta(days=7)).strftime('%Y-%m-%d %H:%M:%S')
                 conn.execute("INSERT INTO vouchers (user_id, code, percent, used, expiry_date) VALUES (?, ?, 20, 0, ?)", (user_id, voucher_code, expiry_str))
