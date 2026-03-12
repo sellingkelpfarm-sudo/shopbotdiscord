@@ -5,11 +5,10 @@ import random
 import string
 import asyncio
 import os
-# Import utils để lấy thời gian chuẩn UTC cho timestamp
 from discord import utils
 from datetime import datetime, timedelta
 
-# ID Kênh thông báo chung
+# ID Kênh thông báo chung (Nơi hiện thông báo mời thành viên)
 NOTIFICATION_CHANNEL_ID = 1479205595604193432
 # ID Kênh quản lý Voucher Admin
 ADMIN_VOUCHER_LOG_ID = 1481611917905756341
@@ -50,17 +49,24 @@ class InviteSystem(commands.Cog):
                 self.invites[guild.id] = await guild.invites()
             except: 
                 pass
+        print("✅ Hệ thống Invite đã sẵn sàng.")
 
     @commands.Cog.listener()
     async def on_member_join(self, member):
-        """Ghi nhớ người mời khi có thành viên mới vào"""
+        """Thông báo ngay khi có thành viên mới vào Group"""
         inviter = await self.get_inviter(member)
         if inviter and not inviter.bot:
+            # Lưu vào Database để theo dõi phần thưởng sau này
             conn = sqlite3.connect('bank_orders.db')
             conn.execute("INSERT OR IGNORE INTO affiliate_rewards (inviter_id, invited_id, rewarded) VALUES (?, ?, 0)", 
                          (inviter.id, member.id))
             conn.commit()
             conn.close()
+
+            # Thông báo công khai vào group
+            notif_channel = self.bot.get_channel(NOTIFICATION_CHANNEL_ID)
+            if notif_channel:
+                await notif_channel.send(f"📥 **{inviter.mention}** đã mời **{member.mention}** vào server! Chào mừng bạn mới nhé! 🎉")
 
     async def get_inviter(self, member):
         try:
@@ -78,7 +84,6 @@ class InviteSystem(commands.Cog):
         return ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
 
     async def send_voucher_webhook(self, user, code, percent, old_price, new_price, order_code, v_type):
-        """Gửi báo cáo sử dụng Voucher về kênh Admin"""
         channel = self.bot.get_channel(ADMIN_VOUCHER_LOG_ID)
         if not channel: return
         
@@ -91,7 +96,6 @@ class InviteSystem(commands.Cog):
         embed.add_field(name="💰 Giá cũ", value=f"{old_price:,} VND", inline=True)
         embed.add_field(name="✅ Giá sau giảm", value=f"**{new_price:,} VND**", inline=True)
         
-        # SỬA LỖI: Thay embed.set_timestamp() bằng thuộc tính timestamp
         embed.timestamp = discord.utils.utcnow()
         
         try: await channel.send(embed=embed)
@@ -146,6 +150,7 @@ class InviteSystem(commands.Cog):
         return None, None
 
     async def give_voucher_logic(self, member, product_name, amount, guild):
+        """Xử lý tặng Voucher bí mật qua DMs sau khi thanh toán"""
         conn = sqlite3.connect('bank_orders.db')
         c = conn.cursor()
         user_id = member.id
@@ -158,8 +163,7 @@ class InviteSystem(commands.Cog):
                      (user_id, amount, amount))
         conn.commit()
 
-        notif_channel = self.bot.get_channel(NOTIFICATION_CHANNEL_ID)
-
+        # Nếu là đơn hàng đầu tiên
         if old_order_count == 0:
             expiry_str = (datetime.now() + timedelta(days=7)).strftime('%Y-%m-%d %H:%M:%S')
             c.execute("SELECT inviter_id FROM affiliate_rewards WHERE invited_id = ? AND rewarded = 0", (user_id,))
@@ -175,6 +179,7 @@ class InviteSystem(commands.Cog):
                 conn.execute("UPDATE affiliate_rewards SET rewarded = 1 WHERE invited_id = ?", (user_id,))
                 conn.commit()
 
+                # DM riêng cho người mua
                 try:
                     embed = discord.Embed(title="🎁 QUÀ TẶNG LẦN ĐẦU MUA HÀNG", color=0x2ecc71)
                     embed.description = f"Cảm ơn bạn đã tin dùng dịch vụ của ***LoTuss's Shop***!\nVì đây là đơn hàng đầu tiên, shop tặng bạn 1 mã giảm giá 20% cho lần sau."
@@ -185,6 +190,7 @@ class InviteSystem(commands.Cog):
                     await member.send(embed=embed)
                 except: pass
 
+                # Nếu người mời chưa nhận quá 3 voucher, tặng thêm cho người mời qua DM
                 if vouchers_sent < 3:
                     v_code_inviter = self.generate_voucher()
                     conn.execute("INSERT INTO vouchers (user_id, code, percent, used, expiry_date) VALUES (?, ?, 20, 0, ?)", (inviter_id, v_code_inviter, expiry_str))
@@ -193,17 +199,13 @@ class InviteSystem(commands.Cog):
                     inviter = guild.get_member(inviter_id) or await self.bot.fetch_user(inviter_id)
                     try:
                         embed_inv = discord.Embed(title="🎊 THƯỞNG MỜI BẠN BÈ", color=0x3498db)
-                        embed_inv.description = f"Thành viên **{member.name}** bạn mời đã mua đơn đầu!\nShop tặng bạn mã giảm giá 20% (Lượt {vouchers_sent + 1}/3)."
+                        embed_inv.description = f"Thành viên **{member.name}** bạn mời đã mua đơn đầu thành công!\nShop tặng bạn mã giảm giá 20% (Lượt {vouchers_sent + 1}/3)."
                         embed_inv.add_field(name="🎫 Mã Voucher", value=f"`{v_code_inviter}`", inline=True)
+                        embed_inv.add_field(name="⏰ Hạn dùng", value="7 Ngày", inline=True)
                         await inviter.send(embed=embed_inv)
                     except: pass
-
-                    if notif_channel:
-                        await notif_channel.send(f"🎊 **{inviter.mention}** đã mời **{member.mention}** thanh toán thành công!\n🎁 Cả hai đều đã nhận được Voucher giảm giá **20%**!")
-                else:
-                    if notif_channel:
-                        await notif_channel.send(f"🎊 **{member.mention}** (được mời) đã thanh toán thành công đơn đầu!\n🎁 Người mua nhận được mã **20%**.")
             else:
+                # Không có người mời, chỉ tặng cho người mua qua DM
                 voucher_code = self.generate_voucher()
                 expiry_str = (datetime.now() + timedelta(days=7)).strftime('%Y-%m-%d %H:%M:%S')
                 conn.execute("INSERT INTO vouchers (user_id, code, percent, used, expiry_date) VALUES (?, ?, 20, 0, ?)", (user_id, voucher_code, expiry_str))
@@ -214,7 +216,6 @@ class InviteSystem(commands.Cog):
                     embed.add_field(name="🎫 Mã Voucher", value=f"`{voucher_code}`", inline=True)
                     embed.add_field(name="📉 Giảm giá", value="**20%**", inline=True)
                     embed.add_field(name="⏰ Hạn dùng", value="7 Ngày", inline=True)
-                    embed.set_footer(text="Nhấn 'NHẬP VOUCHER' trong đơn hàng tới để áp dụng nhé!")
                     await member.send(embed=embed)
                 except: pass
         conn.close()
