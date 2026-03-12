@@ -309,7 +309,7 @@ class SellSystem(commands.Cog):
             embed_tkt.add_field(name="📦 Tên hàng", value=f"{data['product']}", inline=False)
             embed_tkt.add_field(name="💰 Số tiền", value=f"{data['price']:,} VND", inline=True)
             embed_tkt.add_field(name="🆔 Mã đơn", value=f"{matched_code}", inline=True)
-            embed_tkt.add_field(name="📥 Link tải", value=f"[Nhấp vào đây để tải]({data['link']})", inline=False)
+            embed_tkt.add_field(name="📥 Link tải", value=f"({data['link']})", inline=False)
             if channel:
                 try: await channel.send(content=f"<@{user_id}>", embed=embed_tkt)
                 except: pass
@@ -365,7 +365,7 @@ class SellSystem(commands.Cog):
         embed_tkt.add_field(name="📦 Tên hàng", value=f"{data['product']}", inline=False)
         embed_tkt.add_field(name="💰 Số tiền", value=f"{data['price']:,} VND", inline=True)
         embed_tkt.add_field(name="🆔 Mã đơn", value=f"{order_code}", inline=True)
-        embed_tkt.add_field(name="📥 Link tải", value=f"[Nhấp vào đây để tải]({data['link']})", inline=False)
+        embed_tkt.add_field(name="📥 Link tải", value=f"({data['link']})", inline=False)
         
         if channel:
             try: await channel.send(content=f"<@{user_id}>", embed=embed_tkt)
@@ -396,3 +396,4 @@ class SellSystem(commands.Cog):
 async def setup(bot):
     await bot.add_cog(SellSystem(bot))
     if not check_warranty_task.is_running(): check_warranty_task.start(bot)
+
