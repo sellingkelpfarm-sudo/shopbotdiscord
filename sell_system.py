@@ -175,8 +175,7 @@ async def bank_countdown(message, order_code):
     seconds = 300
     while seconds > 0:
         if order_code not in bank_waiting: return
-        m = seconds // 60
-        s = seconds % 60
+        m, s = divmod(seconds, 60)
         try:
             if message.embeds:
                 embed = message.embeds[0]
@@ -185,6 +184,7 @@ async def bank_countdown(message, order_code):
         except: break 
         await asyncio.sleep(1)
         seconds -= 1
+    
     if order_code in bank_waiting:
         db_delete_waiting(order_code)
         del bank_waiting[order_code]
