@@ -18,7 +18,7 @@ def init_db():
                   current_uses INTEGER DEFAULT 0, expiry_date TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS leaderboard 
                  (user_id INTEGER PRIMARY KEY, total_spent INTEGER DEFAULT 0, order_count INTEGER DEFAULT 0)''')
-    c.execute('''CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT)''') # Đổi sang TEXT để lưu ID linh hoạt
+    c.execute('''CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS affiliate_rewards 
                  (inviter_id INTEGER, invited_id INTEGER, rewarded INTEGER DEFAULT 0)''')
     conn.commit()
@@ -44,7 +44,6 @@ class InviteSystem(commands.Cog):
             except: 
                 pass
 
-    # --- CÁC HÀM VOUCHER GIỮ NGUYÊN ---
     @commands.command(name="createvoucher")
     @commands.has_permissions(administrator=True)
     async def createvoucher(self, ctx, code: str, percent: int, max_uses: int, days: int):
@@ -127,14 +126,11 @@ class InviteSystem(commands.Cog):
             except: pass
         conn.close()
 
-    # --- HỆ THỐNG BXH NÂNG CẤP ---
     @tasks.loop(hours=1)
     async def update_top_task(self):
         await self.bot.wait_until_ready()
         conn = sqlite3.connect('bank_orders.db')
         c = conn.cursor()
-        
-        # Lấy Channel ID và Message ID
         c.execute("SELECT value FROM config WHERE key = 'top_channel'")
         ch_res = c.fetchone()
         c.execute("SELECT value FROM config WHERE key = 'top_message'")
@@ -152,11 +148,10 @@ class InviteSystem(commands.Cog):
         c.execute("SELECT user_id, total_spent FROM leaderboard ORDER BY total_spent DESC LIMIT 10")
         rows = c.fetchall()
         
-        # --- THIẾT KẾ EMBED LỘNG LẪY ---
         embed = discord.Embed(
             title="✨ 🏆 BẢNG VÀNG ĐẠI GIA - LOTUSS SHOP 🏆 ✨",
             description="*Nơi vinh danh những khách hàng thân thiết và chịu chi nhất hệ thống.*\n━━━━━━━━━━━━━━━━━━━━",
-            color=0xf1c40f # Màu vàng Gold
+            color=0xf1c40f
         )
         
         medals = ["🥇", "🥈", "🥉", "👤", "👤", "👤", "👤", "👤", "👤", "👤"]
@@ -168,23 +163,18 @@ class InviteSystem(commands.Cog):
             for i, r in enumerate(rows):
                 user_tag = f"<@{r[0]}>"
                 money = f"{r[1]:,}"
-                if i < 3: # Top 3 in đậm đặc biệt
+                if i < 3:
                     top_list += f"{medals[i]} **Top {i+1}: {user_tag}**\n┗ 💰 Tổng chi: `{money} VND`\n\n"
                 else:
                     top_list += f"{medals[i]} Top {i+1}: {user_tag} | `{money} VND`\n"
 
         embed.add_field(name="💎 DANH SÁCH VINH DANH 💎", value=top_list, inline=False)
-        embed.set_thumbnail(url="https://i.imgur.com/mO9uY70.png") # Link ảnh cup nếu bạn có
         embed.set_footer(text=f"🕒 Cập nhật tự động lúc: {datetime.now().strftime('%H:%M - %d/%m/%Y')}")
-        embed.set_image(url="https://i.imgur.com/9pPz5zC.gif") # Thanh gạch ngang lung linh nếu có link gif
 
-        # --- LOGIC CẬP NHẬT TIN NHẮN DUY NHẤT ---
         message = None
         if msg_res:
-            try:
-                message = await channel.fetch_message(int(msg_res[0]))
-            except:
-                message = None
+            try: message = await channel.fetch_message(int(msg_res[0]))
+            except: message = None
 
         if message:
             await message.edit(embed=embed)
@@ -192,20 +182,16 @@ class InviteSystem(commands.Cog):
             new_msg = await channel.send(embed=embed)
             conn.execute("INSERT OR REPLACE INTO config (key, value) VALUES ('top_message', ?)", (str(new_msg.id),))
             conn.commit()
-            
         conn.close()
 
     @commands.command(name="settop")
     @commands.has_permissions(administrator=True)
     async def settop(self, ctx):
         conn = sqlite3.connect('bank_orders.db')
-        # Lưu Channel ID
         conn.execute("INSERT OR REPLACE INTO config (key, value) VALUES ('top_channel', ?)", (str(ctx.channel.id),))
-        # Xóa Message ID cũ để bot gửi tin mới khi setup lại
         conn.execute("DELETE FROM config WHERE key = 'top_message'")
         conn.commit()
         conn.close()
-        
         await ctx.send("✅ Đã thiết lập kênh BXH duy nhất. Bot đang tạo bảng vinh danh...", delete_after=5)
         await self.update_top_task()
 
