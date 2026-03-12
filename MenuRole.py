@@ -1,57 +1,73 @@
 import discord
 from discord.ext import commands
 
-
 class ShopView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
     @discord.ui.button(
-        label="Vào Shop",
+        label="🛒 VÀO SHOP",
         style=discord.ButtonStyle.primary,
         custom_id="menu_shop"
     )
     async def vao_shop(self, interaction: discord.Interaction, button: discord.ui.Button):
-
-        role = interaction.guild.get_role(1479548161830686783)
+        role_id = 1479548161830686783
+        role = interaction.guild.get_role(role_id)
 
         if role:
-            await interaction.user.add_roles(role)
-
-        await interaction.response.send_message(
-            "Bạn đã vào khu Shopping!",
-            ephemeral=True
-        )
+            if role in interaction.user.roles:
+                await interaction.response.send_message(
+                    "✨ **BẠN ĐÃ CÓ ROLE SHOPPING RỒI!** ✨\n*Hãy kiểm tra các kênh bán hàng bên dưới nhé!*", 
+                    ephemeral=True
+                )
+            else:
+                await interaction.user.add_roles(role)
+                await interaction.response.send_message(
+                    "✅ **XÁC NHẬN:** Bạn đã vào khu **SHOPPING** thành công! 🛒",
+                    ephemeral=True
+                )
+        else:
+            await interaction.response.send_message("❌ Lỗi: Không tìm thấy Role Shop trên máy chủ.", ephemeral=True)
 
     @discord.ui.button(
-        label="Thuê Build",
+        label="🏗️ THUÊ BUILD",
         style=discord.ButtonStyle.danger,
         custom_id="menu_build"
     )
     async def thue_build(self, interaction: discord.Interaction, button: discord.ui.Button):
-
-        role = interaction.guild.get_role(1479707478873866261)
+        role_id = 1479707478873866261
+        role = interaction.guild.get_role(role_id)
 
         if role:
-            await interaction.user.add_roles(role)
-
-        await interaction.response.send_message(
-            "Bạn đã vào khu Building!",
-            ephemeral=True
-        )
+            if role in interaction.user.roles:
+                await interaction.response.send_message(
+                    "✨ **BẠN ĐÃ CÓ ROLE BUILDING RỒI!** ✨\n*Hãy liên hệ với đội ngũ Builder để bắt đầu dự án.*", 
+                    ephemeral=True
+                )
+            else:
+                await interaction.user.add_roles(role)
+                await interaction.response.send_message(
+                    "✅ **XÁC NHẬN:** Bạn đã vào khu **BUILDING** thành công! 🏗️",
+                    ephemeral=True
+                )
+        else:
+            await interaction.response.send_message("❌ Lỗi: Không tìm thấy Role Build trên máy chủ.", ephemeral=True)
 
 
 class MenuRole(commands.Cog):
-
     def __init__(self, bot):
         self.bot = bot
 
-        # đăng ký persistent view
-        bot.add_view(ShopView())
+    @commands.Cog.listener()
+    async def on_ready(self):
+        # Đảm bảo view luôn hoạt động kể cả khi bot khởi động lại (Persistent View)
+        self.bot.add_view(ShopView())
+        print("✅ MenuRole Persistent View đã được kích hoạt.")
 
-    @commands.command()
+    @commands.command(name="shop")
+    @commands.has_permissions(administrator=True)
     async def shop(self, ctx):
-
+        # Giữ nguyên Embed cũ của bạn theo yêu cầu
         embed = discord.Embed(
             description=
             "🛒 **CHÀO MỪNG ĐẾN VỚI Lotuss's SCHEMATICS SHOP**\n\n"
