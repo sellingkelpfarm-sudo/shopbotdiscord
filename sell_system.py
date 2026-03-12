@@ -105,14 +105,15 @@ class VoucherModal(discord.ui.Modal, title='🎫 NHẬP MÃ GIẢM GIÁ'):
 
         invite_cog = self.bot.get_cog("InviteSystem")
         if invite_cog:
-            success = await invite_cog.process_voucher_logic(interaction, self.voucher_input.value, self.order_code)
-            if not success:
+            percent, new_price = await invite_cog.process_voucher_logic(interaction, self.voucher_input.value, self.order_code)
+            if percent is None:
                 voucher_attempts[user_id] = voucher_attempts.get(user_id, 0) + 1
                 remain = 3 - voucher_attempts[user_id]
                 msg = f"❌ Mã không chính xác! Bạn còn {remain} lần thử." if remain > 0 else "🚫 Bạn đã hết lượt thử voucher!"
                 await interaction.response.send_message(msg, ephemeral=True)
             else:
                 voucher_attempts[user_id] = 0
+                await interaction.response.send_message(f"✅ Đã áp dụng mã thành công! Giảm **{percent}%**. Giá mới: **{new_price:,} VND**. Vui lòng nhấn lại nút **CHUYỂN KHOẢN** để nhận mã QR mới.", ephemeral=True)
         else:
             await interaction.response.send_message("❌ Hệ thống Voucher đang gặp sự cố.", ephemeral=True)
 
@@ -176,18 +177,20 @@ async def bank_countdown(message, order_code):
         if order_code not in bank_waiting: return
         m = seconds // 60
         s = seconds % 60
-        if message.embeds:
-            embed = message.embeds[0]
-            embed.set_footer(text=f"⏳ Thời gian còn lại: {m:02}:{s:02}")
-            try: await message.edit(embed=embed)
-            except: break # Dừng nếu tin nhắn bị xóa (Sửa lỗi 404 Unknown Message)
+        try:
+            if message.embeds:
+                embed = message.embeds[0]
+                embed.set_footer(text=f"⏳ Thời gian còn lại: {m:02}:{s:02}")
+                await message.edit(embed=embed)
+        except: break 
         await asyncio.sleep(1)
         seconds -= 1
     if order_code in bank_waiting:
         db_delete_waiting(order_code)
         del bank_waiting[order_code]
-        embed = discord.Embed(title="❌ QUÁ THỜI GIAN CHUYỂN KHOẢN", description="Vui lòng tạo lại đơn!", color=discord.Color.red())
-        try: await message.edit(embed=embed, view=None)
+        try:
+            embed = discord.Embed(title="❌ QUÁ THỜI GIAN CHUYỂN KHOẢN", description="Vui lòng tạo lại đơn!", color=discord.Color.red())
+            await message.edit(embed=embed, view=None)
         except: pass
 
 class PaymentView(discord.ui.View):
@@ -200,13 +203,17 @@ class PaymentView(discord.ui.View):
         if not anti_spam(interaction.user.id):
             await interaction.response.send_message("⏳ Bạn thao tác quá nhanh.", ephemeral=True)
             return
+        
+        # Cập nhật lại giá từ bank_waiting trong trường hợp đã áp mã voucher
+        current_price = bank_waiting[self.code]['price'] if self.code in bank_waiting else self.bank_price
+        
         order_activity[self.code] = True
-        qr = f"https://img.vietqr.io/image/MB-0764495919-compact2.png?amount={self.bank_price}&addInfo={self.code}"
+        qr = f"https://img.vietqr.io/image/MB-0764495919-compact2.png?amount={current_price}&addInfo={self.code}"
         embed = discord.Embed(
             title="💳 THANH TOÁN CHUYỂN KHOẢN",
             description=(
                 f"📦 **Sản phẩm:** {self.product}\n"
-                f"💰 **Số tiền:** {self.bank_price:,} VND\n"
+                f"💰 **Số tiền:** {current_price:,} VND\n"
                 f"🧾 **Mã đơn:** {self.code}\n\n"
                 f"📥 **Nội dung CK:** `{self.code}`\n"
                 f"#lưu ý: nội dung chuyển khoản không được chỉnh sửa! | "
@@ -217,8 +224,11 @@ class PaymentView(discord.ui.View):
         embed.set_image(url=qr)
         await interaction.response.send_message(embed=embed)
         msg = await interaction.original_response()
-        bank_waiting[self.code] = {"channel": interaction.channel.id, "link": self.link, "product": self.product, "price": self.bank_price, "user": interaction.user.id}
-        db_save_waiting(self.code, interaction.channel.id, self.product, self.link, self.bank_price, interaction.user.id)
+        
+        if self.code not in bank_waiting:
+            bank_waiting[self.code] = {"channel": interaction.channel.id, "link": self.link, "product": self.product, "price": current_price, "user": interaction.user.id}
+            db_save_waiting(self.code, interaction.channel.id, self.product, self.link, current_price, interaction.user.id)
+        
         asyncio.create_task(bank_countdown(msg, self.code))
 
     @discord.ui.button(label="🎫 NHẬP VOUCHER", style=discord.ButtonStyle.primary)
@@ -251,6 +261,11 @@ class BuyView(discord.ui.View):
         await channel.set_permissions(guild.default_role, view_channel=False)
         await channel.set_permissions(interaction.user, view_channel=True, send_messages=True)
         user_orders[user_id] = user_orders.get(user_id, 0) + 1
+        
+        # Lưu vào bộ nhớ tạm trước để voucher có thể hoạt động
+        bank_waiting[order_code] = {"channel": channel.id, "link": self.link, "product": self.product, "price": self.bank_price, "user": interaction.user.id}
+        db_save_waiting(order_code, channel.id, self.product, self.link, self.bank_price, interaction.user.id)
+
         embed = discord.Embed(
             title="# 💳 XÁC NHẬN THANH TOÁN BẰNG NGÂN HÀNG",
             description=(
@@ -272,7 +287,6 @@ class SellSystem(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    # --- TỰ ĐỘNG DUYỆT ĐƠN TỪ BIẾN ĐỘNG SỐ DƯ ---
     @commands.Cog.listener()
     async def on_message(self, message):
         if message.channel.id != BANK_CHANNEL_ID: return
@@ -288,7 +302,7 @@ class SellSystem(commands.Cog):
             user_id = data["user"]
             member = guild.get_member(user_id) if guild else None
             channel = self.bot.get_channel(data["channel"])
-            # Gửi tin nhắn thành công vào ticket
+            
             embed_tkt = discord.Embed(title="🎉 THANH TOÁN THÀNH CÔNG (TỰ ĐỘNG)", description="Hệ thống đã xác nhận giao dịch qua biến động số dư!", color=discord.Color.green())
             embed_tkt.add_field(name="📦 Tên hàng", value=f"{data['product']}", inline=False)
             embed_tkt.add_field(name="💰 Số tiền", value=f"{data['price']:,} VND", inline=True)
@@ -297,10 +311,10 @@ class SellSystem(commands.Cog):
             if channel:
                 try: await channel.send(content=f"<@{user_id}>", embed=embed_tkt)
                 except: pass
-            # Log công khai
+            
             log_ch = self.bot.get_channel(PAYMENT_LOG_CHANNEL_ID)
             if log_ch: await log_ch.send(f"<@{user_id}> đã thanh toán đơn hàng **{data['product']}** với số tiền **{data['price']:,} VND**, Bạn đánh giá dịch vụ của chúng tớ tại {FEEDBACK_CHANNEL_MENTION} nhé!")
-            # Role & Bảo hành & Voucher
+            
             if member:
                 role = guild.get_role(PAID_ROLE_ID)
                 if role:
@@ -313,9 +327,10 @@ class SellSystem(commands.Cog):
                 conn.close()
                 try: await member.send(f"Chúc mừng bạn đã mua thành công đơn hàng **{data['product']}** với số tiền **{data['price']:,} VND**. Bạn có **3 ngày bảo hành** từ ***LoTuss's Schematic Shop***. Link tải: {data['link']}")
                 except: pass
-                # TẶNG VOUCHER QUA INVITE SYSTEM
+                
                 invite_cog = self.bot.get_cog("InviteSystem")
                 if invite_cog: await invite_cog.give_voucher_logic(member, data['product'], data['price'], guild)
+            
             db_delete_waiting(matched_code)
             if matched_code in bank_waiting: del bank_waiting[matched_code]
             if user_id in user_orders: user_orders[user_id] = max(0, user_orders[user_id] - 1)
@@ -323,6 +338,7 @@ class SellSystem(commands.Cog):
             except: pass
 
     @commands.command(name="sellbank")
+    @commands.has_permissions(administrator=True)
     async def sellbank(self, ctx, bank_price: int, link: str):
         product = ctx.channel.name
         embed = discord.Embed(
