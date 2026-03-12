@@ -204,9 +204,7 @@ class PaymentView(discord.ui.View):
             await interaction.response.send_message("⏳ Bạn thao tác quá nhanh.", ephemeral=True)
             return
         
-        # Cập nhật lại giá từ bank_waiting trong trường hợp đã áp mã voucher
         current_price = bank_waiting[self.code]['price'] if self.code in bank_waiting else self.bank_price
-        
         order_activity[self.code] = True
         qr = f"https://img.vietqr.io/image/MB-0764495919-compact2.png?amount={current_price}&addInfo={self.code}"
         embed = discord.Embed(
@@ -262,7 +260,6 @@ class BuyView(discord.ui.View):
         await channel.set_permissions(interaction.user, view_channel=True, send_messages=True)
         user_orders[user_id] = user_orders.get(user_id, 0) + 1
         
-        # Lưu vào bộ nhớ tạm trước để voucher có thể hoạt động
         bank_waiting[order_code] = {"channel": channel.id, "link": self.link, "product": self.product, "price": self.bank_price, "user": interaction.user.id}
         db_save_waiting(order_code, channel.id, self.product, self.link, self.bank_price, interaction.user.id)
 
@@ -323,8 +320,7 @@ class SellSystem(commands.Cog):
                 expiry = (datetime.now() + timedelta(days=3)).timestamp()
                 conn = sqlite3.connect('bank_orders.db')
                 conn.execute("INSERT OR REPLACE INTO warranty_users VALUES (?, ?, ?)", (user_id, guild.id, expiry))
-                conn.commit()
-                conn.close()
+                conn.commit(); conn.close()
                 try: await member.send(f"Chúc mừng bạn đã mua thành công đơn hàng **{data['product']}** với số tiền **{data['price']:,} VND**. Bạn có **3 ngày bảo hành** từ ***LoTuss's Schematic Shop***. Link tải: {data['link']}")
                 except: pass
                 
