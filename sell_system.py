@@ -102,7 +102,6 @@ class VoucherModal(discord.ui.Modal, title='🎫 NHẬP MÃ GIẢM GIÁ'):
     async def on_submit(self, interaction: discord.Interaction):
         user_id = interaction.user.id
         
-        # Kiểm tra nếu đơn này đã dùng voucher rồi
         if bank_waiting.get(self.order_code, {}).get('voucher_applied'):
             return await interaction.response.send_message("❌ Đơn hàng này đã áp dụng mã giảm giá rồi! Mỗi đơn chỉ được dùng 1 voucher.", ephemeral=True)
 
@@ -123,9 +122,12 @@ class VoucherModal(discord.ui.Modal, title='🎫 NHẬP MÃ GIẢM GIÁ'):
                 await interaction.response.send_message(msg, ephemeral=True)
             else:
                 voucher_attempts[user_id] = 0
-                # Cập nhật trạng thái đã dùng voucher vào database
                 data = bank_waiting[self.order_code]
                 db_save_waiting(self.order_code, data['channel'], data['product'], data['link'], new_price, user_id, 1)
+                
+                # Cập nhật lại giá trị trong memory
+                bank_waiting[self.order_code]['price'] = new_price
+                bank_waiting[self.order_code]['voucher_applied'] = True
                 
                 await interaction.response.send_message(f"✅ Đã áp dụng mã thành công! Giảm **{percent}%**. Giá mới: **{new_price:,} VND**. Vui lòng nhấn lại nút **CHUYỂN KHOẢN** để nhận mã QR mới.", ephemeral=True)
         else:
@@ -193,11 +195,12 @@ async def bank_countdown(message, order_code):
         try:
             if message.embeds:
                 embed = message.embeds[0]
+                # Cập nhật footer đúng cách
                 embed.set_footer(text=f"⏳ Thời gian còn lại: {m:02}:{s:02}")
                 await message.edit(embed=embed)
         except: break 
-        await asyncio.sleep(1)
-        seconds -= 1
+        await asyncio.sleep(2) # Tăng lên 2s để tránh bị rate limit Discord
+        seconds -= 2
     
     if order_code in bank_waiting:
         db_delete_waiting(order_code)
@@ -238,9 +241,8 @@ class PaymentView(discord.ui.View):
         msg = await interaction.original_response()
         
         if self.code not in bank_waiting:
-            is_applied = False
-            bank_waiting[self.code] = {"channel": interaction.channel.id, "link": self.link, "product": self.product, "price": current_price, "user": interaction.user.id, "voucher_applied": is_applied}
-            db_save_waiting(self.code, interaction.channel.id, self.product, self.link, current_price, interaction.user.id, 1 if is_applied else 0)
+            bank_waiting[self.code] = {"channel": interaction.channel.id, "link": self.link, "product": self.product, "price": current_price, "user": interaction.user.id, "voucher_applied": False}
+            db_save_waiting(self.code, interaction.channel.id, self.product, self.link, current_price, interaction.user.id, 0)
         
         asyncio.create_task(bank_countdown(msg, self.code))
 
@@ -301,13 +303,16 @@ class SellSystem(commands.Cog):
 
     @commands.Cog.listener()
     async def on_message(self, message):
+        if message.author.bot and message.channel.id != BANK_CHANNEL_ID: return
         if message.channel.id != BANK_CHANNEL_ID: return
+        
         content = message.content.upper()
         matched_code = None
         for code in list(bank_waiting.keys()):
             if code in content:
                 matched_code = code
                 break
+        
         if matched_code:
             data = bank_waiting[matched_code]
             guild = message.guild
@@ -320,6 +325,7 @@ class SellSystem(commands.Cog):
             embed_tkt.add_field(name="💰 Số tiền", value=f"{data['price']:,} VND", inline=True)
             embed_tkt.add_field(name="🆔 Mã đơn", value=f"{matched_code}", inline=True)
             embed_tkt.add_field(name="📥 Link tải", value=f"({data['link']})", inline=False)
+            
             if channel:
                 try: await channel.send(content=f"<@{user_id}>", embed=embed_tkt)
                 except: pass
