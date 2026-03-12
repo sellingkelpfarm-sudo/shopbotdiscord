@@ -6,6 +6,7 @@ import time
 import asyncio
 import sqlite3
 import os
+import sys
 from datetime import datetime, timedelta
 
 # ===== CẤU HÌNH ID =====
@@ -20,16 +21,15 @@ buy_cooldowns = {}
 bank_waiting = {}
 order_activity = {}
 user_orders = {}
+voucher_attempts = {} # Bộ nhớ đếm số lần nhập sai voucher
 
-# ===== DATABASE LOGIC (Lưu dữ liệu bền vững trên Railway) =====
+# ===== DATABASE LOGIC =====
 def init_db():
     conn = sqlite3.connect('bank_orders.db')
     c = conn.cursor()
-    # Lưu đơn hàng đang chờ thanh toán
     c.execute('''CREATE TABLE IF NOT EXISTS waiting_orders 
                  (code TEXT PRIMARY KEY, channel_id INTEGER, product TEXT, link TEXT, 
                   price INTEGER, user_id INTEGER)''')
-    # Lưu người dùng đang trong thời gian bảo hành
     c.execute('''CREATE TABLE IF NOT EXISTS warranty_users 
                  (user_id INTEGER, guild_id INTEGER, expiry_timestamp REAL)''')
     conn.commit()
@@ -84,7 +84,44 @@ def anti_spam_buy(user_id):
     buy_cooldowns[user_id] = now
     return True
 
-# Task tự động kiểm tra và xóa role sau 3 ngày
+# --- MODAL NHẬP VOUCHER ---
+class VoucherModal(discord.ui.Modal, title='🎫 NHẬP MÃ GIẢM GIÁ'):
+    voucher_input = discord.ui.TextInput(
+        label='Mã Voucher',
+        placeholder='Nhập mã của bạn tại đây...',
+        min_length=3,
+        max_length=20,
+        required=True
+    )
+
+    def __init__(self, bot, order_code):
+        super().__init__()
+        self.bot = bot
+        self.order_code = order_code
+
+    async def on_submit(self, interaction: discord.Interaction):
+        user_id = interaction.user.id
+        
+        # Kiểm tra chống spam (tối đa 3 lần sai)
+        if voucher_attempts.get(user_id, 0) >= 3:
+            return await interaction.response.send_message("🚫 Bạn đã nhập sai quá 3 lần. Chức năng voucher đã bị khóa cho đơn này!", ephemeral=True)
+
+        invite_cog = self.bot.get_cog("InviteSystem")
+        if invite_cog:
+            # Gọi hàm xử lý logic từ invite_system
+            # Hàm này cần được thêm vào invite_system.py như tôi đã hướng dẫn trước đó
+            success = await invite_cog.process_voucher_logic(interaction, self.voucher_input.value, self.order_code)
+            
+            if not success:
+                voucher_attempts[user_id] = voucher_attempts.get(user_id, 0) + 1
+                remain = 3 - voucher_attempts[user_id]
+                msg = f"❌ Mã không chính xác! Bạn còn {remain} lần thử." if remain > 0 else "🚫 Bạn đã hết lượt thử voucher!"
+                await interaction.response.send_message(msg, ephemeral=True)
+            else:
+                voucher_attempts[user_id] = 0 # Reset khi thành công
+        else:
+            await interaction.response.send_message("❌ Hệ thống Voucher đang gặp sự cố.", ephemeral=True)
+
 @tasks.loop(hours=1)
 async def check_warranty_task(bot):
     now = datetime.now().timestamp()
@@ -92,18 +129,14 @@ async def check_warranty_task(bot):
     c = conn.cursor()
     c.execute("SELECT user_id, guild_id FROM warranty_users WHERE expiry_timestamp <= ?", (now,))
     expired = c.fetchall()
-    
     for u_id, g_id in expired:
         guild = bot.get_guild(g_id)
         if guild:
             member = guild.get_member(u_id)
             role = guild.get_role(PAID_ROLE_ID)
             if member and role:
-                try: 
-                    await member.remove_roles(role)
-                    print(f"Đã thu hồi role bảo hành của {member.name}")
+                try: await member.remove_roles(role)
                 except: pass
-                
     c.execute("DELETE FROM warranty_users WHERE expiry_timestamp <= ?", (now,))
     conn.commit()
     conn.close()
@@ -149,10 +182,11 @@ async def bank_countdown(message, order_code):
         if order_code not in bank_waiting: return
         m = seconds // 60
         s = seconds % 60
-        embed = message.embeds[0]
-        embed.set_footer(text=f"⏳ Thời gian còn lại: {m:02}:{s:02}")
-        try: await message.edit(embed=embed)
-        except: break
+        if message.embeds:
+            embed = message.embeds[0]
+            embed.set_footer(text=f"⏳ Thời gian còn lại: {m:02}:{s:02}")
+            try: await message.edit(embed=embed)
+            except: break
         await asyncio.sleep(1)
         seconds -= 1
     if order_code in bank_waiting:
@@ -162,9 +196,9 @@ async def bank_countdown(message, order_code):
         await message.edit(embed=embed, view=None)
 
 class PaymentView(discord.ui.View):
-    def __init__(self, bank_price, product, link, order_code):
+    def __init__(self, bot, bank_price, product, link, order_code):
         super().__init__(timeout=None)
-        self.bank_price, self.product, self.link, self.code = bank_price, product, link, order_code
+        self.bot, self.bank_price, self.product, self.link, self.code = bot, bank_price, product, link, order_code
 
     @discord.ui.button(label="💳 CHUYỂN KHOẢN", style=discord.ButtonStyle.green)
     async def bank(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -194,24 +228,29 @@ class PaymentView(discord.ui.View):
         db_save_waiting(self.code, interaction.channel.id, self.product, self.link, self.bank_price, interaction.user.id)
         asyncio.create_task(bank_countdown(msg, self.code))
 
+    @discord.ui.button(label="🎫 NHẬP VOUCHER", style=discord.ButtonStyle.primary)
+    async def input_voucher(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Mở bảng Modal nhập mã
+        await interaction.response.send_modal(VoucherModal(self.bot, self.code))
+
     @discord.ui.button(label="❌ HỦY ĐƠN", style=discord.ButtonStyle.red)
     async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
         embed = discord.Embed(title="⚠ XÁC NHẬN HỦY ĐƠN", description="BẠN CÓ CHẮC HỦY ĐƠN HÀNG CHỨ?", color=discord.Color.orange())
         await interaction.response.send_message(embed=embed, view=CancelConfirm(interaction.user.id))
 
 class BuyView(discord.ui.View):
-    def __init__(self, bank_price, product, link):
+    def __init__(self, bot, bank_price, product, link):
         super().__init__(timeout=None)
-        self.bank_price, self.product, self.link = bank_price, product, link
+        self.bot, self.bank_price, self.product, self.link = bot, bank_price, product, link
 
     @discord.ui.button(label="🛒 MUA NGAY", style=discord.ButtonStyle.green)
     async def buy(self, interaction: discord.Interaction, button: discord.ui.Button):
         user_id = interaction.user.id
         if not anti_spam_buy(user_id):
-            await interaction.response.send_message("⏳ Bạn đang tạo đơn quá nhanh. Vui lòng đợi vài giây.", ephemeral=True)
+            await interaction.response.send_message("⏳ Bạn đang tạo đơn quá nhanh.", ephemeral=True)
             return
         if user_id in user_orders and user_orders[user_id] >= 3:
-            await interaction.response.send_message("🚫 Bạn đã đạt giới hạn 3 đơn hàng đang mở. Hãy hoàn thành hoặc hủy đơn trước.", ephemeral=True)
+            await interaction.response.send_message("🚫 Bạn đã đạt giới hạn 3 đơn hàng đang mở.", ephemeral=True)
             return
         
         guild = interaction.guild
@@ -229,11 +268,13 @@ class BuyView(discord.ui.View):
                 f"📦 **Tên hàng:** {self.product}\n"
                 f"💰 **Số tiền:** {self.bank_price:,} VND\n"
                 f"🆔 **Mã đơn:** {order_code}\n\n"
-                "👇 Chọn phương thức thanh toán"
+                f"👇 Chọn phương thức thanh toán\n"
+                f"━━━━━━━━━━━━━━━━━━\n"
+                f"💡 *Bạn có voucher giảm giá? Hãy nhấp vào **NHẬP VOUCHER** để nhập mã giảm giá ngay.*"
             ),
             color=discord.Color.blue()
         )
-        await channel.send(interaction.user.mention, embed=embed, view=PaymentView(self.bank_price, self.product, self.link, order_code))
+        await channel.send(interaction.user.mention, embed=embed, view=PaymentView(self.bot, self.bank_price, self.product, self.link, order_code))
         order_activity[order_code] = False
         asyncio.create_task(auto_close_channel(channel, order_code, user_id))
         await interaction.response.send_message(f"✅ Đơn hàng đã tạo: {channel.mention}", ephemeral=True)
@@ -247,66 +288,55 @@ class SellSystem(commands.Cog):
         product = ctx.channel.name
         embed = discord.Embed(
             title="🛒 THANH TOÁN BẰNG CÁCH CHUYỂN KHOẢN NGÂN HÀNG",
-            description=(
-                f"📦 **Tên hàng:** {product}\n\n"
-                f"💳 **Số tiền**: {bank_price:,} VND\n\n"
-                "👇 **Nhấn nút MUA NGAY bên dưới để bắt đầu thanh toán**"
-            ),
+            description=(f"📦 **Tên hàng:** {product}\n\n💳 **Số tiền**: {bank_price:,} VND\n\n"
+                         "👇 **Nhấn nút MUA NGAY bên dưới để bắt đầu thanh toán**"),
             color=discord.Color.blue()
         )
-        await ctx.send(embed=embed, view=BuyView(bank_price, product, link))
+        await ctx.send(embed=embed, view=BuyView(self.bot, bank_price, product, link))
 
     @commands.command(name="dabank")
     @commands.has_permissions(administrator=True)
     async def dabank(self, ctx, order_code: str):
         order_code = order_code.upper()
         if order_code not in bank_waiting:
-            await ctx.send("❌ Không tìm thấy mã đơn này.")
+            await ctx.send("❌ Không tìm thấy mã đơn.")
             return
 
         data = bank_waiting[order_code]
-        user_id = data["user"]
-        member = ctx.guild.get_member(user_id)
+        user_id, member = data["user"], ctx.guild.get_member(data["user"])
 
-        # 1. Gửi thông báo thành công tại Ticket
+        # Phản hồi Ticket
         channel = self.bot.get_channel(data["channel"])
-        embed_tkt = discord.Embed(title="🎉 THANH TOÁN THÀNH CÔNG (ADMIN)", description="Admin đã xác nhận giao dịch!", color=discord.Color.green())
-        embed_tkt.add_field(name="📦 Tên hàng", value=data["product"], inline=False)
-        embed_tkt.add_field(name="💰 Số tiền", value=f"{data['price']:,} VND")
-        embed_tkt.add_field(name="🧾 Mã đơn", value=order_code)
-        embed_tkt.add_field(name="📥 Link tải", value=data["link"], inline=False)
+        embed_tkt = discord.Embed(title="🎉 THANH TOÁN THÀNH CÔNG (ADMIN)", color=discord.Color.green())
+        embed_tkt.description = f"📦 {data['product']}\n💰 {data['price']:,} VND\n🧾 Mã: {order_code}\n📥 Link: {data['link']}"
         if channel: await channel.send(embed=embed_tkt)
 
-        # 2. Thông báo lịch sử mua hàng theo mẫu yêu cầu
-        log_channel = self.bot.get_channel(PAYMENT_LOG_CHANNEL_ID)
-        if log_channel:
-            await log_channel.send(f"<@{user_id}> đã thanh toán đơn hàng **{data['product']}** với số tiền **{data['price']:,} VND**, Bạn đánh giá dịch vụ của chúng tớ tại {FEEDBACK_CHANNEL_MENTION} nhé!")
+        # Log & Bảo hành (Giữ nguyên logic cũ của bạn)
+        log_ch = self.bot.get_channel(PAYMENT_LOG_CHANNEL_ID)
+        if log_ch: await log_ch.send(f"<@{user_id}> đã mua **{data['product']}**. Đánh giá tại {FEEDBACK_CHANNEL_MENTION}!")
 
-        # 3. Cấp role bảo hành & Xử lý DM & Lưu Database Bảo hành
         if member:
             role = ctx.guild.get_role(PAID_ROLE_ID)
             if role:
                 try: await member.add_roles(role)
                 except: pass
-                
-                # Tính thời gian hết hạn (3 ngày sau)
                 expiry = (datetime.now() + timedelta(days=3)).timestamp()
                 conn = sqlite3.connect('bank_orders.db')
                 conn.execute("INSERT OR REPLACE INTO warranty_users VALUES (?, ?, ?)", (user_id, ctx.guild.id, expiry))
                 conn.commit()
                 conn.close()
-
-            # Gửi tin nhắn DM theo mẫu yêu cầu
-            dm_text = (f"Chúc mừng bạn đã mua thành công đơn hàng **{data['product']}** với số tiền **{data['price']:,} VND**. "
-                       f"Bạn có **3 ngày bảo hành** từ ***LoTuss's Schematic Shop***, sau **3 ngày bảo hành sẽ hết hạn!** "
-                       f"Cảm ơn bạn đã tin tưởng và sử dụng dịch vụ của chúng tôi nhé!")
-            try: await member.send(dm_text)
+            try: await member.send(f"Chúc mừng bạn đã mua thành công **{data['product']}**! Bạn có 3 ngày bảo hành.")
             except: pass
+
+        # Tặng voucher qua InviteSystem
+        invite_cog = self.bot.get_cog("InviteSystem")
+        if invite_cog and member:
+            await invite_cog.give_voucher_logic(member, data['product'], data['price'], ctx.guild)
 
         db_delete_waiting(order_code)
         del bank_waiting[order_code]
         if user_id in user_orders: user_orders[user_id] = max(0, user_orders[user_id] - 1)
-        await ctx.send("✅ Đã xác nhận giao dịch thành công.")
+        await ctx.send("✅ Giao dịch thành công.")
 
 async def setup(bot):
     await bot.add_cog(SellSystem(bot))
