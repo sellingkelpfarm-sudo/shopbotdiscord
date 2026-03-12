@@ -155,5 +155,16 @@ class InviteSystem(commands.Cog):
         conn.close()
         return None, None
 
+    # --- HÀM BỔ SUNG ĐỂ FILE SELL_SYSTEM GỌI (KHÔNG SỬA LOGIC CŨ) ---
+    async def give_voucher_logic(self, member, product, amount, guild):
+        """Cập nhật chi tiêu vào Leaderboard khi đơn hàng hoàn tất"""
+        user_id = member.id if hasattr(member, 'id') else member
+        conn = sqlite3.connect('bank_orders.db')
+        conn.execute("INSERT INTO leaderboard (user_id, total_spent, order_count) VALUES (?, ?, 1) "
+                     "ON CONFLICT(user_id) DO UPDATE SET total_spent = total_spent + ?, order_count = order_count + 1",
+                     (user_id, amount, amount))
+        conn.commit()
+        conn.close()
+
 async def setup(bot):
     await bot.add_cog(InviteSystem(bot))
