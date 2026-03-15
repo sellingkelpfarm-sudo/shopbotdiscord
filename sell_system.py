@@ -9,7 +9,7 @@ import os
 import aiohttp
 from datetime import datetime, timedelta
 
-# ===== CẤU HÌNH PAYOS (Điền từ ảnh của bạn) =====
+# ===== CẤU HÌNH PAYOS (Đã kiểm tra theo ảnh của bạn) =====
 PAYOS_CLIENT_ID = "bb1aeae1-dd8c-42fe-94ac-8ead808b6825" 
 PAYOS_API_KEY = "22526dce-0ca7-487d-856e-7abaa06100a0"
 PAYOS_CHECKSUM_KEY = "fc5845a32bb2bad3c1d6d6930dd089621bd119fb9847dff6bc0f984a783de5b6"
@@ -70,7 +70,7 @@ def db_load_waiting():
 init_db()
 db_load_waiting()
 
-# --- HÀM TẠO ĐƠN PAYOS (MỚI) ---
+# --- HÀM TẠO ĐƠN PAYOS (ĐÃ SỬA LỖI) ---
 async def create_payos_qr(order_code, amount, product_name):
     url = "https://api-merchant.payos.vn/v2/payment-requests"
     headers = {
@@ -78,24 +78,30 @@ async def create_payos_qr(order_code, amount, product_name):
         "x-api-key": PAYOS_API_KEY,
         "Content-Type": "application/json"
     }
-    # payOS cần orderCode là số, dùng timestamp để không bị trùng
-    payos_numeric_id = int(time.time()) 
+    
+    # Tạo mã đơn hàng số nguyên ngẫu nhiên (Yêu cầu bắt buộc của PayOS)
+    payos_numeric_id = int(str(time.time()).replace('.', '')[-9:])
+    
     data = {
         "orderCode": payos_numeric_id,
         "amount": amount,
-        "description": order_code, # Nội dung chuyển khoản là mã 6 chữ số
+        "description": f"Thanh toan {order_code}", # Thêm chữ để mô tả hợp lệ hơn
         "cancelUrl": "https://google.com",
         "returnUrl": "https://google.com",
-        "items": [{"name": product_name, "quantity": 1, "price": amount}]
+        "items": [{"name": product_name[:20], "quantity": 1, "price": amount}]
     }
+    
     try:
         async with aiohttp.ClientSession() as session:
             async with session.post(url, headers=headers, json=data) as resp:
                 res = await resp.json()
                 if res.get("code") == "00":
                     return res["data"]["qrCode"]
-                return None
-    except:
+                else:
+                    print(f"Lỗi PayOS API: {res.get('desc')}")
+                    return None
+    except Exception as e:
+        print(f"Lỗi kết nối PayOS: {e}")
         return None
 
 def generate_code():
@@ -246,7 +252,6 @@ class PaymentView(discord.ui.View):
         await interaction.response.defer()
         current_price = bank_waiting[self.code]['price'] if self.code in bank_waiting else self.bank_price
         
-        # LẤY QR TỪ PAYOS (THAY THẾ VIETQR CŨ)
         qr_url = await create_payos_qr(self.code, current_price, self.product)
         if not qr_url:
             return await interaction.followup.send("❌ Không thể tạo mã QR payOS. Vui lòng thử lại!", ephemeral=True)
@@ -384,7 +389,7 @@ class SellSystem(commands.Cog):
     @commands.command(name="sellbank")
     @commands.has_permissions(administrator=True)
     async def sellbank(self, ctx, bank_price: int, link: str):
-        await ctx.message.delete() # XÓA LỆNH !
+        await ctx.message.delete()
         product = ctx.channel.name
         embed = discord.Embed(
             title="🛒 THANH TOÁN BẰNG CÁCH CHUYỂN KHOẢN NGÂN HÀNG",
@@ -397,7 +402,7 @@ class SellSystem(commands.Cog):
     @commands.command(name="dabank")
     @commands.has_permissions(administrator=True)
     async def dabank(self, ctx, order_code: str):
-        await ctx.message.delete() # XÓA LỆNH !
+        await ctx.message.delete()
         order_code = order_code.upper()
         if order_code not in bank_waiting:
             await ctx.send("❌ Không tìm thấy mã đơn.", delete_after=5); return
