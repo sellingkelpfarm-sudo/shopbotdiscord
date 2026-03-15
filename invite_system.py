@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 
 # ID Kênh thông báo chung (Nơi hiện thông báo mời thành viên)
 NOTIFICATION_CHANNEL_ID = 1479205595604193432
-# ID Kênh quản lý Voucher Admin
+# ID Kênh quản lý Voucher Admin (Nơi nhận báo cáo log)
 ADMIN_VOUCHER_LOG_ID = 1481611917905756341
 
 # ===== KHỞI TẠO DATABASE =====
@@ -49,21 +49,18 @@ class InviteSystem(commands.Cog):
                 self.invites[guild.id] = await guild.invites()
             except: 
                 pass
-        print("✅ Hệ thống Invite đã sẵn sàng.")
+        print("✅ Hệ thống Invite & Voucher đã sẵn sàng.")
 
     @commands.Cog.listener()
     async def on_member_join(self, member):
-        """Thông báo ngay khi có thành viên mới vào Group"""
         inviter = await self.get_inviter(member)
         if inviter and not inviter.bot:
-            # Lưu vào Database để theo dõi phần thưởng sau này
             conn = sqlite3.connect('bank_orders.db')
             conn.execute("INSERT OR IGNORE INTO affiliate_rewards (inviter_id, invited_id, rewarded) VALUES (?, ?, 0)", 
                          (inviter.id, member.id))
             conn.commit()
             conn.close()
 
-            # Thông báo công khai vào group
             notif_channel = self.bot.get_channel(NOTIFICATION_CHANNEL_ID)
             if notif_channel:
                 await notif_channel.send(f"📥 **{inviter.mention}** đã mời **{member.mention}** vào server! Chào mừng bạn mới nhé! 🎉")
@@ -84,6 +81,7 @@ class InviteSystem(commands.Cog):
         return ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
 
     async def send_voucher_webhook(self, user, code, percent, old_price, new_price, order_code, v_type):
+        """Thông báo khi khách SỬ DỤNG voucher"""
         channel = self.bot.get_channel(ADMIN_VOUCHER_LOG_ID)
         if not channel: return
         
@@ -95,62 +93,93 @@ class InviteSystem(commands.Cog):
         embed.add_field(name="📉 Giảm giá", value=f"{percent}%", inline=True)
         embed.add_field(name="💰 Giá cũ", value=f"{old_price:,} VND", inline=True)
         embed.add_field(name="✅ Giá sau giảm", value=f"**{new_price:,} VND**", inline=True)
-        
         embed.timestamp = discord.utils.utcnow()
         
         try: await channel.send(embed=embed)
         except: pass
 
-    async def process_voucher_logic(self, interaction, code, order_code):
-        import sell_system
+    async def log_voucher_gift(self, receiver, code, percent, reason):
+        """Thông báo cho Admin khi hệ thống TẶNG voucher cho khách"""
+        channel = self.bot.get_channel(ADMIN_VOUCHER_LOG_ID)
+        if not channel: return
+
+        embed = discord.Embed(title="🎁 HỆ THỐNG TẶNG VOUCHER", color=0x2ecc71)
+        embed.add_field(name="👤 Người nhận", value=f"{receiver.mention} ({receiver.id})", inline=False)
+        embed.add_field(name="🎫 Mã được tạo", value=f"`{code}`", inline=True)
+        embed.add_field(name="📉 Mức giảm", value=f"{percent}%", inline=True)
+        embed.add_field(name="📝 Lý do", value=reason, inline=False)
+        embed.set_footer(text="Voucher này đã được lưu vào Database cá nhân.")
+        embed.timestamp = discord.utils.utcnow()
+
+        try: await channel.send(embed=embed)
+        except: pass
+
+    # --- LỆNH XÓA VOUCHER CHO ADMIN VỚI LÝ DO ---
+    @commands.command(name="delvoucher")
+    @commands.has_permissions(administrator=True)
+    async def delvoucher(self, ctx, code: str, *, reason: str = "Không có lý do cụ thể"):
+        """Xóa mã voucher và thông báo lý do cho khách"""
         code = code.upper()
-        now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         conn = sqlite3.connect('bank_orders.db')
         c = conn.cursor()
-
-        if order_code in sell_system.bank_waiting:
-            if sell_system.bank_waiting[order_code].get('voucher_applied'):
-                conn.close()
-                return "ALREADY_USED", None
-
-        c.execute("SELECT percent, max_uses, current_uses FROM admin_vouchers WHERE code = ? AND expiry_date > ?", (code, now))
-        res = c.fetchone()
         
-        if not res:
-            c.execute("SELECT percent, used FROM vouchers WHERE user_id = ? AND code = ? AND expiry_date > ? AND used = 0", 
-                      (interaction.user.id, code, now))
-            res_personal = c.fetchone()
-            if res_personal:
-                percent = res_personal[0]
-                if order_code in sell_system.bank_waiting:
-                    old_price = sell_system.bank_waiting[order_code]['price']
-                    new_price = int(old_price * (1 - percent/100))
-                    sell_system.bank_waiting[order_code]['price'] = new_price
-                    sell_system.bank_waiting[order_code]['voucher_applied'] = True
-                    conn.execute("UPDATE vouchers SET used = 1 WHERE user_id = ? AND code = ?", (interaction.user.id, code))
-                    conn.commit()
-                    conn.close()
-                    await self.send_voucher_webhook(interaction.user, code, percent, old_price, new_price, order_code, "Voucher Cá Nhân")
-                    return percent, new_price
+        # Kiểm tra xem voucher có thuộc về ai không trước khi xóa
+        c.execute("SELECT user_id, percent FROM vouchers WHERE code = ?", (code,))
+        personal_data = c.fetchone()
         
-        if res and res[2] < res[1]:
-            percent = res[0]
-            if order_code in sell_system.bank_waiting:
-                old_price = sell_system.bank_waiting[order_code]['price']
-                new_price = int(old_price * (1 - percent/100))
-                sell_system.bank_waiting[order_code]['price'] = new_price
-                sell_system.bank_waiting[order_code]['voucher_applied'] = True
-                conn.execute("UPDATE admin_vouchers SET current_uses = current_uses + 1 WHERE code = ?", (code,))
-                conn.commit()
-                conn.close()
-                await self.send_voucher_webhook(interaction.user, code, percent, old_price, new_price, order_code, "Voucher Admin (Chung)")
-                return percent, new_price
-                
+        # Xóa ở bảng admin
+        c.execute("DELETE FROM admin_vouchers WHERE code = ?", (code,))
+        admin_deleted = c.rowcount
+        
+        # Xóa ở bảng cá nhân
+        c.execute("DELETE FROM vouchers WHERE code = ?", (code,))
+        personal_deleted = c.rowcount
+        
+        conn.commit()
         conn.close()
-        return None, None
+        
+        if admin_deleted > 0 or personal_deleted > 0:
+            await ctx.send(f"✅ Đã xóa mã Voucher: `{code}`. Lý do: **{reason}**")
+            
+            # Gửi DM cho khách nếu là voucher cá nhân
+            if personal_data:
+                user_id, percent = personal_data
+                try:
+                    target_user = await self.bot.fetch_user(user_id)
+                    if target_user:
+                        dm_embed = discord.Embed(
+                            title="📢 THÔNG BÁO THU HỒI VOUCHER",
+                            description=f"Chào **{target_user.name}**, chúng mình rất tiếc phải thông báo về việc thay đổi mã giảm giá cá nhân của bạn.",
+                            color=0xe74c3c # Màu đỏ cảnh báo nhưng lịch sự
+                        )
+                        dm_embed.add_field(name="🎫 Mã Voucher", value=f"`{code}`", inline=True)
+                        dm_embed.add_field(name="📉 Mức giảm", value=f"{percent}%", inline=True)
+                        dm_embed.add_field(name="📝 Lý do thu hồi", value=f"**{reason}**", inline=False)
+                        dm_embed.add_field(
+                            name="🧡 Lời nhắn từ Shop", 
+                            value="Đừng buồn nhé! Bạn vẫn có thể nhận thêm các ưu đãi khác bằng cách tham gia các hoạt động hoặc tiếp tục ủng hộ Shop. Hẹn gặp lại bạn!", 
+                            inline=False
+                        )
+                        dm_embed.set_footer(text="Đội ngũ hỗ trợ LoTuss's Shop")
+                        dm_embed.timestamp = discord.utils.utcnow()
+                        await target_user.send(embed=dm_embed)
+                except:
+                    pass # Khách khóa DM hoặc không tìm thấy user
+
+            # Log việc xóa vào kênh admin
+            log_ch = self.bot.get_channel(ADMIN_VOUCHER_LOG_ID)
+            if log_ch:
+                log_embed = discord.Embed(title="🗑️ LOG XÓA VOUCHER", color=0x34495e)
+                log_embed.add_field(name="👤 Admin thực hiện", value=ctx.author.mention, inline=True)
+                log_embed.add_field(name="🎫 Mã bị xóa", value=f"`{code}`", inline=True)
+                log_embed.add_field(name="📝 Lý do", value=reason, inline=False)
+                log_embed.timestamp = discord.utils.utcnow()
+                await log_ch.send(embed=log_embed)
+        else:
+            await ctx.send(f"❌ Không tìm thấy mã Voucher `{code}` nào để xóa.")
 
     async def give_voucher_logic(self, member, product_name, amount, guild):
-        """Xử lý tặng Voucher bí mật qua DMs sau khi thanh toán"""
+        """Xử lý tặng Voucher bí mật và thông báo Admin"""
         conn = sqlite3.connect('bank_orders.db')
         c = conn.cursor()
         user_id = member.id
@@ -163,61 +192,45 @@ class InviteSystem(commands.Cog):
                      (user_id, amount, amount))
         conn.commit()
 
-        # Nếu là đơn hàng đầu tiên
         if old_order_count == 0:
             expiry_str = (datetime.now() + timedelta(days=7)).strftime('%Y-%m-%d %H:%M:%S')
             c.execute("SELECT inviter_id FROM affiliate_rewards WHERE invited_id = ? AND rewarded = 0", (user_id,))
             aff_res = c.fetchone()
+
+            v_code_buyer = self.generate_voucher()
+            conn.execute("INSERT INTO vouchers (user_id, code, percent, used, expiry_date) VALUES (?, ?, 20, 0, ?)", (user_id, v_code_buyer, expiry_str))
+            conn.commit()
+            
+            await self.log_voucher_gift(member, v_code_buyer, 20, "Mua hàng lần đầu tại shop")
+
+            try:
+                embed = discord.Embed(title="🎁 QUÀ TẶNG LẦN ĐẦU MUA HÀNG", color=0x2ecc71)
+                embed.description = f"Cảm ơn bạn đã tin dùng dịch vụ của ***LoTuss's Shop***!\nVì đây là đơn hàng đầu tiên, shop tặng bạn 1 mã giảm giá 20% cho lần sau."
+                embed.add_field(name="🎫 Mã Voucher", value=f"`{v_code_buyer}`", inline=True)
+                embed.add_field(name="⏰ Hạn dùng", value="7 Ngày", inline=True)
+                await member.send(embed=embed)
+            except: pass
 
             if aff_res:
                 inviter_id = aff_res[0]
                 c.execute("SELECT COUNT(*) FROM affiliate_rewards WHERE inviter_id = ? AND rewarded = 1", (inviter_id,))
                 vouchers_sent = c.fetchone()[0]
 
-                v_code_buyer = self.generate_voucher()
-                conn.execute("INSERT INTO vouchers (user_id, code, percent, used, expiry_date) VALUES (?, ?, 20, 0, ?)", (user_id, v_code_buyer, expiry_str))
-                conn.execute("UPDATE affiliate_rewards SET rewarded = 1 WHERE invited_id = ?", (user_id,))
-                conn.commit()
-
-                # DM riêng cho người mua
-                try:
-                    embed = discord.Embed(title="🎁 QUÀ TẶNG LẦN ĐẦU MUA HÀNG", color=0x2ecc71)
-                    embed.description = f"Cảm ơn bạn đã tin dùng dịch vụ của ***LoTuss's Shop***!\nVì đây là đơn hàng đầu tiên, shop tặng bạn 1 mã giảm giá 20% cho lần sau."
-                    embed.add_field(name="🎫 Mã Voucher", value=f"`{v_code_buyer}`", inline=True)
-                    embed.add_field(name="📉 Giảm giá", value="**20%**", inline=True)
-                    embed.add_field(name="⏰ Hạn dùng", value="7 Ngày", inline=True)
-                    embed.set_footer(text="Nhấn 'NHẬP VOUCHER' trong đơn hàng tới để áp dụng nhé!")
-                    await member.send(embed=embed)
-                except: pass
-
-                # Nếu người mời chưa nhận quá 3 voucher, tặng thêm cho người mời qua DM
                 if vouchers_sent < 3:
                     v_code_inviter = self.generate_voucher()
                     conn.execute("INSERT INTO vouchers (user_id, code, percent, used, expiry_date) VALUES (?, ?, 20, 0, ?)", (inviter_id, v_code_inviter, expiry_str))
+                    conn.execute("UPDATE affiliate_rewards SET rewarded = 1 WHERE invited_id = ?", (user_id,))
                     conn.commit()
                     
-                    inviter = guild.get_member(inviter_id) or await self.bot.fetch_user(inviter_id)
+                    inviter_user = await self.bot.fetch_user(inviter_id)
+                    await self.log_voucher_gift(inviter_user, v_code_inviter, 20, f"Mời thành viên {member.name} mua đơn đầu")
+
                     try:
                         embed_inv = discord.Embed(title="🎊 THƯỞNG MỜI BẠN BÈ", color=0x3498db)
-                        embed_inv.description = f"Thành viên **{member.name}** bạn mời đã mua đơn đầu thành công!\nShop tặng bạn mã giảm giá 20% (Lượt {vouchers_sent + 1}/3)."
+                        embed_inv.description = f"Thành viên **{member.name}** bạn mời đã mua đơn đầu thành công!\nShop tặng bạn mã giảm giá 20%."
                         embed_inv.add_field(name="🎫 Mã Voucher", value=f"`{v_code_inviter}`", inline=True)
-                        embed_inv.add_field(name="⏰ Hạn dùng", value="7 Ngày", inline=True)
-                        await inviter.send(embed=embed_inv)
+                        await inviter_user.send(embed=embed_inv)
                     except: pass
-            else:
-                # Không có người mời, chỉ tặng cho người mua qua DM
-                voucher_code = self.generate_voucher()
-                expiry_str = (datetime.now() + timedelta(days=7)).strftime('%Y-%m-%d %H:%M:%S')
-                conn.execute("INSERT INTO vouchers (user_id, code, percent, used, expiry_date) VALUES (?, ?, 20, 0, ?)", (user_id, voucher_code, expiry_str))
-                conn.commit()
-                try:
-                    embed = discord.Embed(title="🎁 QUÀ TẶNG LẦN ĐẦU MUA HÀNG", color=0x2ecc71)
-                    embed.description = f"Cảm ơn bạn đã tin dùng dịch vụ của ***LoTuss's Shop***!\nVì đây là đơn hàng đầu tiên, shop tặng bạn 1 mã giảm giá 20% cho lần sau."
-                    embed.add_field(name="🎫 Mã Voucher", value=f"`{voucher_code}`", inline=True)
-                    embed.add_field(name="📉 Giảm giá", value="**20%**", inline=True)
-                    embed.add_field(name="⏰ Hạn dùng", value="7 Ngày", inline=True)
-                    await member.send(embed=embed)
-                except: pass
         conn.close()
 
     @tasks.loop(hours=1)
@@ -236,22 +249,31 @@ class InviteSystem(commands.Cog):
         if not channel:
             conn.close()
             return
+            
         c.execute("SELECT user_id, total_spent FROM leaderboard ORDER BY total_spent DESC LIMIT 10")
         rows = c.fetchall()
-        embed = discord.Embed(title="✨ 🏆 BẢNG VÀNG ĐẠI GIA THANH TOÁN BẰNG BANK - LOTUSS'S SHOP 🏆 ✨", description="*Nơi vinh danh những khách hàng thân thiết và chịu chi nhất hệ thống.*\n━━━━━━━━━━━━━━━━━━━━", color=0xf1c40f)
+        
+        embed = discord.Embed(
+            title="✨ 🏆 BẢNG VÀNG ĐẠI GIA THANH TOÁN BẰNG BANK - LOTUSS'S SHOP 🏆 ✨", 
+            description="*Nơi vinh danh những khách hàng thân thiết và chịu chi nhất hệ thống.*\n━━━━━━━━━━━━━━━━━━━━", 
+            color=0xf1c40f
+        )
         medals = ["🥇", "🥈", "🥉", "👤", "👤", "👤", "👤", "👤", "👤", "👤"]
         top_list = ""
         if not rows:
             top_list = "🚀 *Chưa có dữ liệu, hãy trở thành người đầu tiên!*"
         else:
             for i, r in enumerate(rows):
-                user_tag = f"<@{r[0]}>"; money = f"{r[1]:,}"
+                user_tag = f"<@{r[0]}>"
+                money = f"{r[1]:,}"
                 if i < 3:
                     top_list += f"{medals[i]} **Top {i+1}: {user_tag}**\n┗ 💰 Tổng chi: `{money} VND`\n\n"
                 else:
                     top_list += f"{medals[i]} Top {i+1}: {user_tag} | `{money} VND`\n"
+        
         embed.add_field(name="💎 DANH SÁCH VINH DANH 💎", value=top_list, inline=False)
         embed.set_footer(text=f"🕒 Cập nhật tự động lúc: {datetime.now().strftime('%H:%M - %d/%m/%Y')}")
+        
         message = None
         if msg_res:
             try: message = await channel.fetch_message(int(msg_res[0]))
@@ -284,6 +306,10 @@ class InviteSystem(commands.Cog):
             conn.execute("INSERT INTO admin_vouchers (code, percent, max_uses, expiry_date) VALUES (?, ?, ?, ?)", (code, percent, max_uses, expiry_date))
             conn.commit()
             await ctx.send(f"✅ Đã tạo Voucher chung: `{code}` giảm **{percent}%**, lượt dùng: **{max_uses}**, hạn: **{days} ngày**.")
+            
+            log_ch = self.bot.get_channel(ADMIN_VOUCHER_LOG_ID)
+            if log_ch:
+                await log_ch.send(f"🆕 Admin **{ctx.author}** đã tạo mã Voucher chung `{code}` ({percent}%).")
         except sqlite3.IntegrityError:
             await ctx.send("❌ Mã Voucher này đã tồn tại!")
         finally:
