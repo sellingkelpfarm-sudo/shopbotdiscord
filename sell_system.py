@@ -73,7 +73,6 @@ db_load_waiting()
 
 # --- HÀM TẠO VIETQR TĨNH ---
 def create_vietqr_url(order_code, amount):
-    # Sử dụng template compact2 để hiển thị QR gọn đẹp
     account_name_encoded = MY_ACCOUNT_NAME.replace(" ", "%20")
     qr_url = f"https://img.vietqr.io/image/{MY_BANK_ID}-{MY_BANK_ACCOUNT}-compact2.png?amount={amount}&addInfo={order_code}&accountName={account_name_encoded}"
     return qr_url
@@ -228,7 +227,6 @@ class PaymentView(discord.ui.View):
         
         current_price = bank_waiting[self.code]['price'] if self.code in bank_waiting else self.bank_price
         
-        # TẠO LINK VIETQR TĨNH (SỬA ĐỔI CHÍNH TẠI ĐÂY)
         qr_url = create_vietqr_url(self.code, current_price)
 
         order_activity[self.code] = True
@@ -350,8 +348,11 @@ class SellSystem(commands.Cog):
                 conn.commit(); conn.close()
                 try: await member.send(f"Chúc mừng bạn đã mua thành công đơn hàng **{data['product']}** với số tiền **{data['price']:,} VND**. Bạn có **3 ngày bảo hành**. Link tải: {data['link']}")
                 except: pass
+                
+                # CẬP NHẬT: THÊM LOGIC GIVE VOUCHER & BXH
                 invite_cog = self.bot.get_cog("InviteSystem")
-                if invite_cog: await invite_cog.give_voucher_logic(member, data['product'], data['price'], guild)
+                if invite_cog:
+                    await invite_cog.give_voucher_logic(member, data['product'], data['price'], guild)
             
             db_delete_waiting(matched_code)
             if matched_code in bank_waiting: del bank_waiting[matched_code]
@@ -407,6 +408,11 @@ class SellSystem(commands.Cog):
             conn.commit(); conn.close()
             try: await member.send(f"Chúc mừng bạn đã mua thành công đơn hàng **{data['product']}** với số tiền **{data['price']:,} VND**. Bạn có **3 ngày bảo hành**. Link tải: {data['link']}")
             except: pass
+
+            # CẬP NHẬT: THÊM LOGIC GIVE VOUCHER & BXH
+            invite_cog = self.bot.get_cog("InviteSystem")
+            if invite_cog:
+                await invite_cog.give_voucher_logic(member, data['product'], data['price'], ctx.guild)
         
         db_delete_waiting(order_code)
         if order_code in bank_waiting: del bank_waiting[order_code]
