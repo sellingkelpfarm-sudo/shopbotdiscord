@@ -12,7 +12,7 @@ import hmac
 import hashlib
 from datetime import datetime, timedelta
 
-# ===== CẤU HÌNH PAYOS (Đã kiểm tra theo ảnh của bạn) =====
+# ===== CẤU HÌNH PAYOS =====
 PAYOS_CLIENT_ID = "bb1aeae1-dd8c-42fe-94ac-8ead808b6825" 
 PAYOS_API_KEY = "22526dce-0ca7-487d-856e-7abaa06100a0"
 PAYOS_CHECKSUM_KEY = "fc5845a32bb2bad3c1d6d6930dd089621bd119fb9847dff6bc0f984a783de5b6"
@@ -31,7 +31,7 @@ order_activity = {}
 user_orders = {}
 voucher_attempts = {}
 
-# ===== DATABASE LOGIC (GIỮ NGUYÊN) =====
+# ===== DATABASE LOGIC =====
 def init_db():
     conn = sqlite3.connect('bank_orders.db')
     c = conn.cursor()
@@ -73,13 +73,14 @@ def db_load_waiting():
 init_db()
 db_load_waiting()
 
-# --- HÀM TẠO CHỮ KÝ (BẮT BUỘC CHO PAYOS) ---
+# --- HÀM TẠO CHỮ KÝ (SỬA LẠI ĐỂ ĐÚNG CHUẨN PAYOS) ---
 def create_payos_signature(data, checksum_key):
+    # Sắp xếp key theo alphabet là bắt buộc
     sorted_data = dict(sorted(data.items()))
     data_str = "&".join([f"{k}={v}" for k, v in sorted_data.items()])
     return hmac.new(checksum_key.encode(), data_str.encode(), hashlib.sha256).hexdigest()
 
-# --- HÀM TẠO ĐƠN PAYOS (ĐÃ FIX LỖI SIGNATURE VÀ ĐỊNH DẠNG) ---
+# --- HÀM TẠO ĐƠN PAYOS (SỬA LỖI TRUYỀN DỮ LIỆU) ---
 async def create_payos_qr(order_code, amount, product_name):
     url = "https://api-merchant.payos.vn/v2/payment-requests"
     headers = {
@@ -88,24 +89,24 @@ async def create_payos_qr(order_code, amount, product_name):
         "Content-Type": "application/json"
     }
     
-    # PayOS yêu cầu orderCode là số nguyên (tối đa 14 chữ số)
+    # Tạo orderCode kiểu số nguyên duy nhất (PayOS bắt buộc numeric)
     payos_numeric_id = int(str(time.time()).replace('.', '')[-9:])
     
-    # Dữ liệu cơ bản để tạo signature (phải đúng thứ tự A-Z bên trong hàm create_payos_signature)
+    # Dữ liệu cần để tạo signature (Chỉ gồm các trường cơ bản theo docs PayOS)
     data_to_sign = {
         "amount": int(amount),
         "cancelUrl": "https://google.com",
-        "description": f"Chuyen khoan {order_code}"[:25], # Giới hạn 25 ký tự
+        "description": f"Thanh toan {order_code}"[:25],
         "orderCode": payos_numeric_id,
         "returnUrl": "https://google.com"
     }
     
-    # Tạo chữ ký bảo mật
     signature = create_payos_signature(data_to_sign, PAYOS_CHECKSUM_KEY)
     
-    # Payload đầy đủ gửi lên API
+    # Payload đầy đủ
     payload = data_to_sign.copy()
     payload["signature"] = signature
+    # Thêm items sau khi đã tạo signature vì PayOS v2 không yêu cầu items trong signature body mặc định
     payload["items"] = [{"name": re.sub(r'[^\w\s]', '', product_name)[:20], "quantity": 1, "price": int(amount)}]
     
     try:
@@ -115,10 +116,10 @@ async def create_payos_qr(order_code, amount, product_name):
                 if res.get("code") == "00":
                     return res["data"]["qrCode"]
                 else:
-                    print(f"Lỗi PayOS API: {res.get('desc')} (Code: {res.get('code')})")
+                    print(f"Lỗi PayOS: {res.get('desc')}")
                     return None
     except Exception as e:
-        print(f"Lỗi kết nối PayOS: {e}")
+        print(f"Lỗi kết nối: {e}")
         return None
 
 def generate_code():
@@ -130,7 +131,7 @@ def generate_code():
 def anti_spam(user_id):
     now = time.time()
     if user_id in cooldowns:
-        if now - cooldowns[user_id] < 10: return False
+        if now - cooldowns[user_id] < 5: return False
     cooldowns[user_id] = now
     return True
 
@@ -141,7 +142,7 @@ def anti_spam_buy(user_id):
     buy_cooldowns[user_id] = now
     return True
 
-# --- MODAL NHẬP VOUCHER (GIỮ NGUYÊN) ---
+# --- MODAL NHẬP VOUCHER ---
 class VoucherModal(discord.ui.Modal, title='🎫 NHẬP MÃ GIẢM GIÁ'):
     voucher_input = discord.ui.TextInput(
         label='Mã Voucher',
@@ -159,19 +160,20 @@ class VoucherModal(discord.ui.Modal, title='🎫 NHẬP MÃ GIẢM GIÁ'):
     async def on_submit(self, interaction: discord.Interaction):
         user_id = interaction.user.id
         if bank_waiting.get(self.order_code, {}).get('voucher_applied'):
-            return await interaction.response.send_message("❌ Đơn hàng này đã áp dụng mã giảm giá rồi! Mỗi đơn chỉ được dùng 1 voucher.", ephemeral=True)
+            return await interaction.response.send_message("❌ Đơn hàng này đã áp dụng mã giảm giá rồi!", ephemeral=True)
+        
         if voucher_attempts.get(user_id, 0) >= 3:
-            return await interaction.response.send_message("🚫 Bạn đã nhập sai quá 3 lần. Chức năng voucher đã bị khóa cho đơn này!", ephemeral=True)
+            return await interaction.response.send_message("🚫 Bạn đã bị khóa chức năng voucher cho đơn này!", ephemeral=True)
 
         invite_cog = self.bot.get_cog("InviteSystem")
         if invite_cog:
             percent, new_price = await invite_cog.process_voucher_logic(interaction, self.voucher_input.value, self.order_code)
             if percent == "ALREADY_USED":
-                return await interaction.response.send_message("❌ Bạn đã sử dụng mã giảm giá này cho một đơn hàng trước đó rồi!", ephemeral=True)
+                return await interaction.response.send_message("❌ Bạn đã sử dụng mã này rồi!", ephemeral=True)
             if percent is None:
                 voucher_attempts[user_id] = voucher_attempts.get(user_id, 0) + 1
                 remain = 3 - voucher_attempts[user_id]
-                msg = f"❌ Mã không chính xác! Còn {remain} lần thử." if remain > 0 else "🚫 Bạn đã hết lượt thử voucher!"
+                msg = f"❌ Mã không chính xác! Còn {remain} lần thử." if remain > 0 else "🚫 Bạn đã hết lượt thử!"
                 await interaction.response.send_message(msg, ephemeral=True)
             else:
                 voucher_attempts[user_id] = 0
@@ -179,7 +181,7 @@ class VoucherModal(discord.ui.Modal, title='🎫 NHẬP MÃ GIẢM GIÁ'):
                 db_save_waiting(self.order_code, data['channel'], data['product'], data['link'], new_price, user_id, 1)
                 bank_waiting[self.order_code]['price'] = new_price
                 bank_waiting[self.order_code]['voucher_applied'] = True
-                await interaction.response.send_message(f"✅ Đã áp dụng mã thành công! Giảm **{percent}%**. Giá mới: **{new_price:,} VND**. Vui lòng nhấn lại nút **CHUYỂN KHOẢN** để nhận mã QR mới.", ephemeral=True)
+                await interaction.response.send_message(f"✅ Giảm **{percent}%**. Giá mới: **{new_price:,} VND**. Nhấn lại **CHUYỂN KHOẢN** để lấy QR mới.", ephemeral=True)
         else:
             await interaction.response.send_message("❌ Hệ thống Voucher đang gặp sự cố.", ephemeral=True)
 
@@ -246,8 +248,8 @@ async def bank_countdown(message, order_code):
                 embed.set_footer(text=f"⏳ Thời gian còn lại: {m:02}:{s:02}")
                 await message.edit(embed=embed)
         except: break 
-        await asyncio.sleep(2)
-        seconds -= 2
+        await asyncio.sleep(5) # Tăng thời gian sleep để tránh rate limit Discord
+        seconds -= 5
     if order_code in bank_waiting:
         db_delete_waiting(order_code)
         del bank_waiting[order_code]
@@ -263,15 +265,17 @@ class PaymentView(discord.ui.View):
 
     @discord.ui.button(label="💳 CHUYỂN KHOẢN", style=discord.ButtonStyle.green)
     async def bank(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Kiểm tra spam trước khi defer
         if not anti_spam(interaction.user.id):
             return await interaction.response.send_message("⏳ Bạn thao tác quá nhanh.", ephemeral=True)
+            
+        await interaction.response.defer(ephemeral=True)
         
-        await interaction.response.defer()
         current_price = bank_waiting[self.code]['price'] if self.code in bank_waiting else self.bank_price
         
         qr_url = await create_payos_qr(self.code, current_price, self.product)
         if not qr_url:
-            return await interaction.followup.send("❌ Không thể tạo mã QR payOS. Vui lòng thử lại!", ephemeral=True)
+            return await interaction.followup.send("❌ Không thể tạo mã QR payOS. Vui lòng thử lại sau vài giây!", ephemeral=True)
 
         order_activity[self.code] = True
         embed = discord.Embed(
@@ -287,7 +291,7 @@ class PaymentView(discord.ui.View):
             color=discord.Color.green()
         )
         embed.set_image(url=qr_url)
-        msg = await interaction.followup.send(embed=embed)
+        msg = await interaction.followup.send(embed=embed, ephemeral=False)
         
         if self.code not in bank_waiting:
             bank_waiting[self.code] = {"channel": interaction.channel.id, "link": self.link, "product": self.product, "price": current_price, "user": interaction.user.id, "voucher_applied": False}
@@ -390,7 +394,7 @@ class SellSystem(commands.Cog):
                 conn = sqlite3.connect('bank_orders.db')
                 conn.execute("INSERT OR REPLACE INTO warranty_users VALUES (?, ?, ?)", (user_id, guild.id, expiry))
                 conn.commit(); conn.close()
-                try: await member.send(f"Chúc mừng bạn đã mua thành công đơn hàng **{data['product']}** với số tiền **{data['price']:,} VND**. Bạn có **3 ngày bảo hành** từ ***LoTuss's Schematic Shop***. Link tải: {data['link']}")
+                try: await member.send(f"Chúc mừng bạn đã mua thành công đơn hàng **{data['product']}** với số tiền **{data['price']:,} VND**. Bạn có **3 ngày bảo hành**. Link tải: {data['link']}")
                 except: pass
                 invite_cog = self.bot.get_cog("InviteSystem")
                 if invite_cog: await invite_cog.give_voucher_logic(member, data['product'], data['price'], guild)
@@ -409,7 +413,7 @@ class SellSystem(commands.Cog):
         embed = discord.Embed(
             title="🛒 THANH TOÁN BẰNG CÁCH CHUYỂN KHOẢN NGÂN HÀNG",
             description=(f"📦 **Tên hàng:** {product}\n\n💳 **Số tiền**: {bank_price:,} VND\n\n"
-                         "👇 **Nhấn nút MUA NGAY bên dưới để bắt đầu thanh toán**"),
+                          "👇 **Nhấn nút MUA NGAY bên dưới để bắt đầu thanh toán**"),
             color=discord.Color.blue()
         )
         await ctx.send(embed=embed, view=BuyView(self.bot, bank_price, product, link))
