@@ -8,14 +8,12 @@ import sqlite3
 import os
 import aiohttp
 import re
-import hmac
-import hashlib
 from datetime import datetime, timedelta
 
-# ===== CẤU HÌNH PAYOS =====
-PAYOS_CLIENT_ID = "bb1aeae1-dd8c-42fe-94ac-8ead808b6825" 
-PAYOS_API_KEY = "22526dce-0ca7-487d-856e-7abaa06100a0"
-PAYOS_CHECKSUM_KEY = "fc5845a32bb2bad3c1d6d6930dd089621bd119fb9847dff6bc0f984a783de5b6"
+# ===== CẤU HÌNH NGÂN HÀNG (VIETQR) =====
+MY_BANK_ID = "MB"
+MY_BANK_ACCOUNT = "0764495919"
+MY_ACCOUNT_NAME = "NGUYEN THANH DAT"
 
 # ===== CẤU HÌNH ID =====
 BANK_CHANNEL_ID = 1479440469120389221
@@ -31,7 +29,7 @@ order_activity = {}
 user_orders = {}
 voucher_attempts = {}
 
-# ===== DATABASE LOGIC =====
+# ===== DATABASE LOGIC (GIỮ NGUYÊN) =====
 def init_db():
     conn = sqlite3.connect('bank_orders.db')
     c = conn.cursor()
@@ -73,56 +71,12 @@ def db_load_waiting():
 init_db()
 db_load_waiting()
 
-# --- HÀM TẠO CHỮ KÝ (SỬA ĐÚNG CHUẨN PAYOS V2) ---
-def create_payos_signature(data, checksum_key):
-    # PayOS v2 yêu cầu các trường này nối theo thứ tự alphabet của key
-    # Dữ liệu: amount, cancelUrl, description, orderCode, returnUrl
-    sorted_data = dict(sorted(data.items()))
-    data_str = "&".join([f"{k}={v}" for k, v in sorted_data.items()])
-    return hmac.new(checksum_key.encode(), data_str.encode(), hashlib.sha256).hexdigest()
-
-# --- HÀM TẠO ĐƠN PAYOS (SỬA LỖI TRUYỀN DỮ LIỆU) ---
-async def create_payos_qr(order_code, amount, product_name):
-    url = "https://api-merchant.payos.vn/v2/payment-requests"
-    headers = {
-        "x-client-id": PAYOS_CLIENT_ID,
-        "x-api-key": PAYOS_API_KEY,
-        "Content-Type": "application/json"
-    }
-    
-    # PayOS bắt buộc orderCode là KIỂU SỐ (Numeric) - [00:09:41] trong video có nhắc mã đơn
-    # Ta dùng timestamp để đảm bảo tính duy nhất và là số
-    payos_numeric_id = int(time.time())
-    
-    # Dữ liệu cần để tạo signature theo đúng docs PayOS
-    data_to_sign = {
-        "amount": int(amount),
-        "cancelUrl": "https://google.com",
-        "description": f"Thanh toan {order_code}"[:25],
-        "orderCode": payos_numeric_id,
-        "returnUrl": "https://google.com"
-    }
-    
-    signature = create_payos_signature(data_to_sign, PAYOS_CHECKSUM_KEY)
-    
-    # Payload gửi đi
-    payload = data_to_sign.copy()
-    payload["signature"] = signature
-    # Thêm item (không bắt buộc trong chuỗi signature nhưng tốt cho việc quản lý đơn)
-    payload["items"] = [{"name": re.sub(r'[^\w\s]', '', product_name)[:20], "quantity": 1, "price": int(amount)}]
-    
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, headers=headers, json=payload) as resp:
-                res = await resp.json()
-                if res.get("code") == "00":
-                    return res["data"]["qrCode"]
-                else:
-                    print(f"Lỗi PayOS: {res.get('desc')}")
-                    return None
-    except Exception as e:
-        print(f"Lỗi kết nối: {e}")
-        return None
+# --- HÀM TẠO VIETQR TĨNH ---
+def create_vietqr_url(order_code, amount):
+    # Sử dụng template compact2 để hiển thị QR gọn đẹp
+    account_name_encoded = MY_ACCOUNT_NAME.replace(" ", "%20")
+    qr_url = f"https://img.vietqr.io/image/{MY_BANK_ID}-{MY_BANK_ACCOUNT}-compact2.png?amount={amount}&addInfo={order_code}&accountName={account_name_encoded}"
+    return qr_url
 
 def generate_code():
     while True:
@@ -144,7 +98,7 @@ def anti_spam_buy(user_id):
     buy_cooldowns[user_id] = now
     return True
 
-# --- MODAL NHẬP VOUCHER ---
+# --- MODAL NHẬP VOUCHER (GIỮ NGUYÊN) ---
 class VoucherModal(discord.ui.Modal, title='🎫 NHẬP MÃ GIẢM GIÁ'):
     voucher_input = discord.ui.TextInput(
         label='Mã Voucher',
@@ -274,9 +228,8 @@ class PaymentView(discord.ui.View):
         
         current_price = bank_waiting[self.code]['price'] if self.code in bank_waiting else self.bank_price
         
-        qr_url = await create_payos_qr(self.code, current_price, self.product)
-        if not qr_url:
-            return await interaction.followup.send("❌ Không thể tạo mã QR payOS. Vui lòng thử lại sau vài giây!", ephemeral=True)
+        # TẠO LINK VIETQR TĨNH (SỬA ĐỔI CHÍNH TẠI ĐÂY)
+        qr_url = create_vietqr_url(self.code, current_price)
 
         order_activity[self.code] = True
         embed = discord.Embed(
