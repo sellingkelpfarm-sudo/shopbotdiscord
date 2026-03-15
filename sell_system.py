@@ -73,12 +73,17 @@ def db_load_waiting():
 init_db()
 db_load_waiting()
 
-# --- HÀM TẠO CHỮ KÝ (SỬA LẠI ĐỂ ĐÚNG CHUẨN PAYOS) ---
+# --- HÀM TẠO CHỮ KÝ (SỬA ĐÚNG CHUẨN PAYOS V2) ---
 def create_payos_signature(data, checksum_key):
-    # Sắp xếp key theo alphabet là bắt buộc
-    sorted_data = dict(sorted(data.items()))
-    data_str = "&".join([f"{k}={v}" for k, v in sorted_data.items()])
-    return hmac.new(checksum_key.encode(), data_str.encode(), hashlib.sha256).hexdigest()
+    # PayOS yêu cầu thứ tự key cố định khi nối chuỗi để tạo chữ ký
+    raw_data = (
+        f"amount={data['amount']}&"
+        f"cancelUrl={data['cancelUrl']}&"
+        f"description={data['description']}&"
+        f"orderCode={data['orderCode']}&"
+        f"returnUrl={data['returnUrl']}"
+    )
+    return hmac.new(checksum_key.encode(), raw_data.encode(), hashlib.sha256).hexdigest()
 
 # --- HÀM TẠO ĐƠN PAYOS (SỬA LỖI TRUYỀN DỮ LIỆU) ---
 async def create_payos_qr(order_code, amount, product_name):
@@ -89,10 +94,10 @@ async def create_payos_qr(order_code, amount, product_name):
         "Content-Type": "application/json"
     }
     
-    # Tạo orderCode kiểu số nguyên duy nhất (PayOS bắt buộc numeric)
-    payos_numeric_id = int(str(time.time()).replace('.', '')[-9:])
+    # PayOS bắt buộc orderCode là KIỂU SỐ (Numeric)
+    payos_numeric_id = int(time.time()) 
     
-    # Dữ liệu cần để tạo signature (Chỉ gồm các trường cơ bản theo docs PayOS)
+    # Dữ liệu bắt buộc để tạo signature
     data_to_sign = {
         "amount": int(amount),
         "cancelUrl": "https://google.com",
@@ -103,11 +108,8 @@ async def create_payos_qr(order_code, amount, product_name):
     
     signature = create_payos_signature(data_to_sign, PAYOS_CHECKSUM_KEY)
     
-    # Payload đầy đủ
     payload = data_to_sign.copy()
     payload["signature"] = signature
-    # Thêm items sau khi đã tạo signature vì PayOS v2 không yêu cầu items trong signature body mặc định
-    payload["items"] = [{"name": re.sub(r'[^\w\s]', '', product_name)[:20], "quantity": 1, "price": int(amount)}]
     
     try:
         async with aiohttp.ClientSession() as session:
@@ -248,7 +250,7 @@ async def bank_countdown(message, order_code):
                 embed.set_footer(text=f"⏳ Thời gian còn lại: {m:02}:{s:02}")
                 await message.edit(embed=embed)
         except: break 
-        await asyncio.sleep(5) # Tăng thời gian sleep để tránh rate limit Discord
+        await asyncio.sleep(5) 
         seconds -= 5
     if order_code in bank_waiting:
         db_delete_waiting(order_code)
@@ -265,7 +267,6 @@ class PaymentView(discord.ui.View):
 
     @discord.ui.button(label="💳 CHUYỂN KHOẢN", style=discord.ButtonStyle.green)
     async def bank(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Kiểm tra spam trước khi defer
         if not anti_spam(interaction.user.id):
             return await interaction.response.send_message("⏳ Bạn thao tác quá nhanh.", ephemeral=True)
             
