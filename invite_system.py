@@ -238,7 +238,7 @@ class InviteSystem(commands.Cog):
             return
         c.execute("SELECT user_id, total_spent FROM leaderboard ORDER BY total_spent DESC LIMIT 10")
         rows = c.fetchall()
-        embed = discord.Embed(title="✨ 🏆 BẢNG VÀNG ĐẠI GIA - LOTUSS SHOP 🏆 ✨", description="*Nơi vinh danh những khách hàng thân thiết và chịu chi nhất hệ thống.*\n━━━━━━━━━━━━━━━━━━━━", color=0xf1c40f)
+        embed = discord.Embed(title="✨ 🏆 BẢNG VÀNG ĐẠI GIA THANH TOÁN BẰNG BANK - LOTUSS SHOP 🏆 ✨", description="*Nơi vinh danh những khách hàng thân thiết và chịu chi nhất hệ thống.*\n━━━━━━━━━━━━━━━━━━━━", color=0xf1c40f)
         medals = ["🥇", "🥈", "🥉", "👤", "👤", "👤", "👤", "👤", "👤", "👤"]
         top_list = ""
         if not rows:
