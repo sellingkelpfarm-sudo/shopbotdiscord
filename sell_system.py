@@ -7,6 +7,9 @@ import asyncio
 import sqlite3
 import os
 import aiohttp
+import re
+import hmac
+import hashlib
 from datetime import datetime, timedelta
 
 # ===== CẤU HÌNH PAYOS (Đã kiểm tra theo ảnh của bạn) =====
@@ -70,7 +73,13 @@ def db_load_waiting():
 init_db()
 db_load_waiting()
 
-# --- HÀM TẠO ĐƠN PAYOS (ĐÃ SỬA LỖI) ---
+# --- HÀM TẠO CHỮ KÝ (BẮT BUỘC CHO PAYOS) ---
+def create_payos_signature(data, checksum_key):
+    sorted_data = dict(sorted(data.items()))
+    data_str = "&".join([f"{k}={v}" for k, v in sorted_data.items()])
+    return hmac.new(checksum_key.encode(), data_str.encode(), hashlib.sha256).hexdigest()
+
+# --- HÀM TẠO ĐƠN PAYOS (ĐÃ FIX LỖI SIGNATURE VÀ ĐỊNH DẠNG) ---
 async def create_payos_qr(order_code, amount, product_name):
     url = "https://api-merchant.payos.vn/v2/payment-requests"
     headers = {
@@ -79,26 +88,34 @@ async def create_payos_qr(order_code, amount, product_name):
         "Content-Type": "application/json"
     }
     
-    # Tạo mã đơn hàng số nguyên ngẫu nhiên (Yêu cầu bắt buộc của PayOS)
+    # PayOS yêu cầu orderCode là số nguyên (tối đa 14 chữ số)
     payos_numeric_id = int(str(time.time()).replace('.', '')[-9:])
     
-    data = {
-        "orderCode": payos_numeric_id,
-        "amount": amount,
-        "description": f"Thanh toan {order_code}", # Thêm chữ để mô tả hợp lệ hơn
+    # Dữ liệu cơ bản để tạo signature (phải đúng thứ tự A-Z bên trong hàm create_payos_signature)
+    data_to_sign = {
+        "amount": int(amount),
         "cancelUrl": "https://google.com",
-        "returnUrl": "https://google.com",
-        "items": [{"name": product_name[:20], "quantity": 1, "price": amount}]
+        "description": f"Chuyen khoan {order_code}"[:25], # Giới hạn 25 ký tự
+        "orderCode": payos_numeric_id,
+        "returnUrl": "https://google.com"
     }
+    
+    # Tạo chữ ký bảo mật
+    signature = create_payos_signature(data_to_sign, PAYOS_CHECKSUM_KEY)
+    
+    # Payload đầy đủ gửi lên API
+    payload = data_to_sign.copy()
+    payload["signature"] = signature
+    payload["items"] = [{"name": re.sub(r'[^\w\s]', '', product_name)[:20], "quantity": 1, "price": int(amount)}]
     
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.post(url, headers=headers, json=data) as resp:
+            async with session.post(url, headers=headers, json=payload) as resp:
                 res = await resp.json()
                 if res.get("code") == "00":
                     return res["data"]["qrCode"]
                 else:
-                    print(f"Lỗi PayOS API: {res.get('desc')}")
+                    print(f"Lỗi PayOS API: {res.get('desc')} (Code: {res.get('code')})")
                     return None
     except Exception as e:
         print(f"Lỗi kết nối PayOS: {e}")
@@ -311,7 +328,6 @@ class BuyView(discord.ui.View):
         bank_waiting[order_code] = {"channel": channel.id, "link": self.link, "product": self.product, "price": self.bank_price, "user": interaction.user.id, "voucher_applied": False}
         db_save_waiting(order_code, channel.id, self.product, self.link, self.bank_price, interaction.user.id, 0)
 
-        # EMBED GỐC (GIỮ NGUYÊN)
         embed = discord.Embed(
             title="# 💳 XÁC NHẬN THANH TOÁN BẰNG NGÂN HÀNG",
             description=(
@@ -352,7 +368,6 @@ class SellSystem(commands.Cog):
             member = guild.get_member(user_id) if guild else None
             channel = self.bot.get_channel(data["channel"])
             
-            # EMBED THÀNH CÔNG (GIỮ NGUYÊN)
             embed_tkt = discord.Embed(title="🎉 THANH TOÁN THÀNH CÔNG (TỰ ĐỘNG)", description="Hệ thống đã xác nhận giao dịch qua biến động số dư!", color=discord.Color.green())
             embed_tkt.add_field(name="📦 Tên hàng", value=f"{data['product']}", inline=False)
             embed_tkt.add_field(name="💰 Số tiền", value=f"{data['price']:,} VND", inline=True)
