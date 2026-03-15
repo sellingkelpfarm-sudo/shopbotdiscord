@@ -75,15 +75,11 @@ db_load_waiting()
 
 # --- HÀM TẠO CHỮ KÝ (SỬA ĐÚNG CHUẨN PAYOS V2) ---
 def create_payos_signature(data, checksum_key):
-    # PayOS yêu cầu thứ tự key cố định khi nối chuỗi để tạo chữ ký
-    raw_data = (
-        f"amount={data['amount']}&"
-        f"cancelUrl={data['cancelUrl']}&"
-        f"description={data['description']}&"
-        f"orderCode={data['orderCode']}&"
-        f"returnUrl={data['returnUrl']}"
-    )
-    return hmac.new(checksum_key.encode(), raw_data.encode(), hashlib.sha256).hexdigest()
+    # PayOS v2 yêu cầu các trường này nối theo thứ tự alphabet của key
+    # Dữ liệu: amount, cancelUrl, description, orderCode, returnUrl
+    sorted_data = dict(sorted(data.items()))
+    data_str = "&".join([f"{k}={v}" for k, v in sorted_data.items()])
+    return hmac.new(checksum_key.encode(), data_str.encode(), hashlib.sha256).hexdigest()
 
 # --- HÀM TẠO ĐƠN PAYOS (SỬA LỖI TRUYỀN DỮ LIỆU) ---
 async def create_payos_qr(order_code, amount, product_name):
@@ -94,10 +90,11 @@ async def create_payos_qr(order_code, amount, product_name):
         "Content-Type": "application/json"
     }
     
-    # PayOS bắt buộc orderCode là KIỂU SỐ (Numeric)
-    payos_numeric_id = int(time.time()) 
+    # PayOS bắt buộc orderCode là KIỂU SỐ (Numeric) - [00:09:41] trong video có nhắc mã đơn
+    # Ta dùng timestamp để đảm bảo tính duy nhất và là số
+    payos_numeric_id = int(time.time())
     
-    # Dữ liệu bắt buộc để tạo signature
+    # Dữ liệu cần để tạo signature theo đúng docs PayOS
     data_to_sign = {
         "amount": int(amount),
         "cancelUrl": "https://google.com",
@@ -108,8 +105,11 @@ async def create_payos_qr(order_code, amount, product_name):
     
     signature = create_payos_signature(data_to_sign, PAYOS_CHECKSUM_KEY)
     
+    # Payload gửi đi
     payload = data_to_sign.copy()
     payload["signature"] = signature
+    # Thêm item (không bắt buộc trong chuỗi signature nhưng tốt cho việc quản lý đơn)
+    payload["items"] = [{"name": re.sub(r'[^\w\s]', '', product_name)[:20], "quantity": 1, "price": int(amount)}]
     
     try:
         async with aiohttp.ClientSession() as session:
